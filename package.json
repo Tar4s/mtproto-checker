@@ -1,13 +1,12 @@
 {
   "name": "mtproto-checker",
-  "version": "1.0.0",
-  "private": true,
+  "version": "0.0.1",
   "description": "Check Telegram MTProto proxies via a real TDLib handshake (testProxy), like tdesktop does",
   "bin": {
-    "check-proxies": "check-proxies.js"
+    "check-proxies": "check.js"
   },
   "scripts": {
-    "start": "node check-proxies.js"
+    "start": "node check.js"
   },
   "engines": {
     "node": ">=16"

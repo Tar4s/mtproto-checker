@@ -1,0 +1,3 @@
+https://raw.githubusercontent.com/SoliSpirit/mtproto/refs/heads/master/all_proxies.txt
+https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/refs/heads/main/proxy_all.txt
+https://raw.githubusercontent.com/Surfboardv2ray/TGProto/refs/heads/main/proxies.txt

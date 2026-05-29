@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const http = require('node:http')
 const test = require('node:test')
 
-const { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')
+const { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')
 
 function basicAuth(user, password) {
   return `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`
@@ -116,8 +116,8 @@ test('createServer checks posted url and returns expanded json', async () => {
   const seen = []
   const server = createServer({
     auth: { user: 'admin', password: 'secret' },
-    checkUrl: async url => {
-      seen.push(url)
+    checkUrl: async (url, opts) => {
+      seen.push({ url, opts })
       return [{
         server: '1.2.3.4',
         port: 443,
@@ -138,9 +138,11 @@ test('createServer checks posted url and returns expanded json', async () => {
     })
 
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(seen, ['https://example.com/list.txt'])
+    assert.deepEqual(seen, [{ url: 'https://example.com/list.txt', opts: { iterations: 1, concurrency: 30 } }])
     assert.deepEqual(res.body, {
       url: 'https://example.com/list.txt',
+      iterations: 1,
+      concurrency: 30,
       count: 1,
       working: 1,
       results: [{
@@ -153,6 +155,104 @@ test('createServer checks posted url and returns expanded json', async () => {
         link: 'tg://proxy?server=1.2.3.4&port=443&secret=ee'
       }]
     })
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer passes iterations from request body', async () => {
+  const seen = []
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async (url, opts) => {
+      seen.push({ url, opts })
+      return [{
+        server: '1.2.3.4',
+        port: 443,
+        sni: null,
+        ok: true,
+        ms: 321,
+        error: null,
+        link: 'tg://proxy?server=1.2.3.4&port=443&secret=ee'
+      }]
+    },
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: 'https://example.com/list.txt', iterations: 3 }
+    })
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(seen, [{ url: 'https://example.com/list.txt', opts: { iterations: 3, concurrency: 30 } }])
+    assert.equal(res.body.iterations, 3)
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer passes concurrency from request body', async () => {
+  const seen = []
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async (url, opts) => {
+      seen.push({ url, opts })
+      return []
+    },
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: 'https://example.com/list.txt', concurrency: 7 }
+    })
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(seen, [{ url: 'https://example.com/list.txt', opts: { iterations: 1, concurrency: 7 } }])
+    assert.equal(res.body.concurrency, 7)
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer rejects invalid iterations', async () => {
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async () => [],
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: 'https://example.com/list.txt', iterations: 0 }
+    })
+
+    assert.equal(res.statusCode, 400)
+    assert.equal(res.body.error, 'iterations must be a positive integer')
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer rejects invalid concurrency', async () => {
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async () => [],
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: 'https://example.com/list.txt', concurrency: 0 }
+    })
+
+    assert.equal(res.statusCode, 400)
+    assert.equal(res.body.error, 'concurrency must be a positive integer')
   } finally {
     server.close()
   }
@@ -237,6 +337,31 @@ test('checkSingleUrl rejects non-http source urls', async () => {
     }),
     /url must be a proxy link or an http or https URL/
   )
+})
+
+test('checkRequestUrl re-checks only successful proxies for requested iterations', async () => {
+  const calls = []
+  const result = await checkRequestUrl('https://example.com/list.txt', {
+    iterations: 2,
+    concurrency: 7,
+    fetcher: async () => [
+      'tg://proxy?server=one.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'tg://proxy?server=two.example&port=443&secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    ].join('\n'),
+    checker: async (proxies, opts) => {
+      calls.push(proxies.map(proxy => proxy.server))
+      assert.equal(opts.concurrency, 7)
+      return proxies.map(proxy => ({
+        proxy,
+        ok: proxy.server === 'one.example',
+        ms: 100,
+        error: proxy.server === 'one.example' ? null : 'timeout'
+      }))
+    }
+  })
+
+  assert.deepEqual(calls, [['one.example', 'two.example'], ['one.example']])
+  assert.deepEqual(result.map(item => item.proxy.server), ['one.example'])
 })
 
 test('resolveInputProxies uses --proxy without reading other sources', async () => {

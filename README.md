@@ -184,18 +184,21 @@ POST /check
 Content-Type: application/json
 Authorization: Basic ...
 
-{ "url": "https://example.com/proxies.txt" }
+{ "url": "https://example.com/proxies.txt", "iterations": 3, "concurrency": 10 }
 ```
 
 The `url` field accepts either a remote `http(s)` proxy list or one direct
-`tg://proxy` / `https://t.me/proxy` link.
+`tg://proxy` / `https://t.me/proxy` link. The optional `iterations` field is a
+positive integer; each next round checks only proxies that passed the previous
+round. It defaults to `1`. The optional `concurrency` field controls how many
+proxies are checked in parallel per round. It defaults to `30`.
 
 Example:
 
 ```bash
 curl -u admin:secret \
   -H 'content-type: application/json' \
-  -d '{"url":"https://example.com/proxies.txt"}' \
+  -d '{"url":"https://example.com/proxies.txt","iterations":3,"concurrency":10}' \
   http://127.0.0.1:3080/check
 ```
 
@@ -213,6 +216,8 @@ Response:
 ```json
 {
   "url": "https://example.com/proxies.txt",
+  "iterations": 3,
+  "concurrency": 10,
   "count": 1,
   "working": 1,
   "results": [

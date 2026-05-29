@@ -415,6 +415,31 @@ async function checkSingleUrl(url, opts) {
   return checker(proxies, opts)
 }
 
+async function loadSingleUrlProxies(url, opts = {}) {
+  const directProxy = parseLink(url)
+  if (directProxy) return [directProxy]
+
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('url must be a proxy link or an http or https URL')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('url must be a proxy link or an http or https URL')
+  }
+
+  const fetcher = opts.fetcher || fetchText
+  const text = await fetcher(url)
+  return mergeProxies([text])
+}
+
+async function checkRequestUrl(url, opts) {
+  const proxies = await loadSingleUrlProxies(url, opts)
+  const checker = opts.checker || checkProxies
+  return runIterativeChecks(proxies, opts.iterations ?? 1, batch => checker(batch, opts))
+}
+
 async function resolveInputProxies(opts, deps = {}) {
   const readFile = deps.readFile || (file => fs.readFileSync(file, 'utf8'))
   const readInputFn = deps.readInput || readInput
@@ -554,11 +579,23 @@ function createServer({ auth, checkUrl, logger = console.error }) {
         jsonResponse(res, statusCode, { error: 'Request body must include url' })
         return
       }
+      const iterations = body.iterations === undefined ? 1 : body.iterations
+      if (!Number.isInteger(iterations) || iterations < 1) {
+        statusCode = 400
+        jsonResponse(res, statusCode, { error: 'iterations must be a positive integer' })
+        return
+      }
+      const concurrency = body.concurrency === undefined ? 30 : body.concurrency
+      if (!Number.isInteger(concurrency) || concurrency < 1) {
+        statusCode = 400
+        jsonResponse(res, statusCode, { error: 'concurrency must be a positive integer' })
+        return
+      }
 
       const url = body.url.trim()
       let results
       try {
-        results = await checkUrl(url)
+        results = await checkUrl(url, { iterations, concurrency })
       } catch (err) {
         statusCode = 502
         jsonResponse(res, statusCode, {
@@ -571,6 +608,8 @@ function createServer({ auth, checkUrl, logger = console.error }) {
       statusCode = 200
       jsonResponse(res, statusCode, {
         url,
+        iterations,
+        concurrency,
         count: report.length,
         working: report.filter(item => item.ok).length,
         results: report
@@ -603,7 +642,12 @@ async function startServer(env = process.env) {
 
   const server = createServer({
     auth: { user, password },
-    checkUrl: async url => checkSingleUrl(url, { apiId, apiHash })
+    checkUrl: async (url, requestOpts) => checkRequestUrl(url, {
+      apiId,
+      apiHash,
+      iterations: requestOpts.iterations,
+      concurrency: requestOpts.concurrency
+    })
   })
 
   await new Promise((resolve, reject) => {
@@ -681,7 +725,7 @@ async function main() {
   process.exit(0)
 }
 
-module.exports = { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni, shouldStartServer, startServer }
+module.exports = { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni, shouldStartServer, startServer }
 
 if (require.main === module) (shouldStartServer(process.argv.slice(2)) ? startServer() : main()).catch(err => {
   console.error(err)

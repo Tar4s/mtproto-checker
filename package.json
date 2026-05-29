@@ -1,6 +1,6 @@
 {
   "name": "mtproto-checker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Check Telegram MTProto proxies via a real TDLib handshake (testProxy), like tdesktop does",
   "repository": {
     "type": "git",

@@ -3,3 +3,4 @@ node_modules/
 .proxy-checker-td/
 result*
 proxies.txt
+docs/

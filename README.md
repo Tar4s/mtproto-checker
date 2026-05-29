@@ -42,6 +42,22 @@ Optional, if you want the `check-proxies` command available locally:
 npm link
 ```
 
+### GitHub Packages
+
+This project can also be published to GitHub Packages as
+`@tar4s/mtproto-checker`. GitHub's npm registry requires scoped package names,
+so the GitHub Packages workflow applies that scoped name during publishing.
+
+To install from GitHub Packages:
+
+```bash
+npm config set @tar4s:registry https://npm.pkg.github.com
+npm install @tar4s/mtproto-checker
+```
+
+Private packages require authentication with a GitHub personal access token that
+has `read:packages`.
+
 ## Quick Start
 
 Check URLs listed in `urls.txt`:

@@ -10,8 +10,9 @@ likely to work in Telegram than with a plain TCP/TLS port check.
 - 🌐 Loads proxy lists from remote URLs, local files, or `stdin`
 - 🧹 Removes duplicates by `server:port:secret`
 - 🔐 Supports hex and base64url MTProto secrets
-- 🕵️ Extracts Fake-TLS SNI domains from `ee...` secrets
+- 🕵️ Extracts Fake-TLS SNI from `ee...` secrets and supports padded `dd...` secrets
 - 🚀 Checks proxies concurrently via TDLib `testProxy`
+- 💪 Re-checks survivors with `--iterations` to find the most stable proxies
 - 📄 Writes both a full JSON report and a ready-to-use TXT list
 
 ## Requirements
@@ -117,6 +118,7 @@ Input files may contain blank lines and `#` comments.
 | `--dc <1-5>` | `2` | Telegram data center ID used for `testProxy`. |
 | `--timeout <sec>` | `10` | Per-proxy TDLib timeout in seconds. Decimals are allowed. |
 | `--concurrency <n>` | `30` | Number of proxies checked in parallel. Lower values can produce steadier latency numbers. |
+| `--iterations <num>` | `1` | Number of check rounds. Each next round checks only proxies that passed the previous one. |
 | `--out <prefix>` | `result` | Output file prefix. Writes `<prefix>.json` and `<prefix>.txt`. |
 
 Environment variables:
@@ -130,8 +132,8 @@ Environment variables:
 
 By default the checker writes:
 
-- `result.json` — full report for every checked proxy
-- `result.txt` — only working proxy links, fastest first
+- `result.json` — full report for the final completed round
+- `result.txt` — working proxy links from the final completed round, fastest first
 
 Example JSON item:
 
@@ -167,6 +169,12 @@ More conservative latency check:
 
 ```bash
 TG_API_ID=12345 TG_API_HASH=abcdef node check.js --sources urls.txt --concurrency 10 --timeout 15
+```
+
+Find the most stable proxies across several rounds:
+
+```bash
+TG_API_ID=12345 TG_API_HASH=abcdef node check.js --sources urls.txt --iterations 3 --out stable
 ```
 
 Test against another Telegram DC:
@@ -216,6 +224,8 @@ Exported helpers:
   the command with them.
 - If remote URLs fail on old Node.js versions, upgrade to Node.js 18+.
 - If checks are noisy, reduce `--concurrency`.
+- If you want only resilient proxies, increase `--iterations`; `result.txt`
+  will contain proxies that survived the final round.
 - Only MTProto proxy links are checked. `tg://socks` links are ignored.
 - Temporary TDLib files are created in `.proxy-checker-td/` and removed after the run.
 

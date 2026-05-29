@@ -2,3 +2,4 @@ node_modules/
 .vscode/
 .proxy-checker-td/
 result*
+proxies.txt

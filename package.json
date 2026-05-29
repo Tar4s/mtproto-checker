@@ -2,9 +2,22 @@
   "name": "mtproto-checker",
   "version": "0.0.1",
   "description": "Check Telegram MTProto proxies via a real TDLib handshake (testProxy), like tdesktop does",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tar4s/mtproto-checker"
+  },
+  "bugs": {
+    "url": "https://github.com/Tar4s/mtproto-checker/issues"
+  },
+  "homepage": "https://github.com/Tar4s/mtproto-checker#readme",
   "bin": {
     "check-proxies": "check.js"
   },
+  "files": [
+    "check.js",
+    "README.md",
+    "urls.txt"
+  ],
   "scripts": {
     "start": "node check.js"
   },

@@ -18,12 +18,12 @@
  * result de-duplicated (by server+port+secret) via a Set.
  *
  * CLI usage:
- *   TG_API_ID=12345 TG_API_HASH=abcdef... node check-proxies.js [sources] [options]
+ *   TG_API_ID=12345 TG_API_HASH=abcdef... node check.js [sources] [options]
  *   # sources: any positional http(s) URL, a local file path, or stdin
- *   node check-proxies.js https://raw.githubusercontent.com/u/r/main/list.txt
- *   node check-proxies.js --url URL1 --url URL2
- *   node check-proxies.js --sources urls.txt           # file with one URL per line
- *   cat proxies.txt | node check-proxies.js
+ *   node check.js https://raw.githubusercontent.com/u/r/main/list.txt
+ *   node check.js --url URL1 --url URL2
+ *   node check.js --sources urls.txt           # file with one URL per line
+ *   cat proxies.txt | node check.js
  *
  * Options:
  *   --url <url>         add a source URL (repeatable)
@@ -32,9 +32,10 @@
  *   --timeout <sec>     per-proxy TDLib timeout in seconds (default 10)
  *   --concurrency <n>   parallel checks (default 30; lower = more accurate ms)
  *   --out <prefix>      output file prefix (default "result")
+ *   --iterations <num>  repeat checks, keeping only proxies that passed the previous round (default 1)
  *
  * Module usage:
- *   const { checkProxiesFromUrls } = require('./check-proxies')
+ *   const { checkProxiesFromUrls } = require('./check')
  *   const results = await checkProxiesFromUrls([url1, url2], { apiId, apiHash })
  *
  * Requirements: Node.js v18+ (for global fetch), `npm i tdl prebuilt-tdlib`,
@@ -46,19 +47,35 @@ const path = require('path')
 const tdl = require('tdl')
 const { getTdjson } = require('prebuilt-tdlib')
 
+const tdlibConfigState = { configured: false }
+
+/**
+ * Configure TDLib once per process. The `tdl` package rejects configure calls
+ * after the first client has been initialized.
+ * @param {{configured: boolean}} state - mutable configuration state
+ * @param {(opts: object) => void} configure - tdl.configure-compatible function
+ * @param {() => unknown} tdjsonFactory - returns tdjson binding
+ */
+function configureTdlibOnce(state = tdlibConfigState, configure = tdl.configure, tdjsonFactory = getTdjson) {
+  if (state.configured) return
+  configure({ tdjson: tdjsonFactory(), verbosityLevel: 0 })
+  state.configured = true
+}
+
 /**
  * Parse argv into an options object, collecting source URLs and/or a file path.
  * @param {string[]} argv - process.argv.slice(2)
- * @returns {{file: string|null, urls: string[], sourcesFile: string|null, dc: number, timeout: number, concurrency: number, out: string}}
+ * @returns {{file: string|null, urls: string[], sourcesFile: string|null, dc: number, timeout: number, concurrency: number, out: string, iterations: number}}
  */
 function parseArgs(argv) {
-  const opts = { file: null, urls: [], sourcesFile: null, dc: 2, timeout: 10, concurrency: 30, out: 'result' }
+  const opts = { file: null, urls: [], sourcesFile: null, dc: 2, timeout: 10, concurrency: 30, out: 'result', iterations: 1 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dc') opts.dc = parseInt(argv[++i], 10)
     else if (a === '--timeout') opts.timeout = parseFloat(argv[++i])
     else if (a === '--concurrency') opts.concurrency = parseInt(argv[++i], 10)
     else if (a === '--out') opts.out = argv[++i]
+    else if (a === '--iterations') opts.iterations = parseInt(argv[++i], 10)
     else if (a === '--url') opts.urls.push(argv[++i])
     else if (a === '--sources') opts.sourcesFile = argv[++i]
     else if (/^https?:\/\//i.test(a)) opts.urls.push(a)
@@ -313,7 +330,7 @@ async function checkProxies(proxies, opts) {
   const databaseDirectory = path.join(tdlibDir, 'db')
   const filesDirectory = path.join(tdlibDir, 'files')
 
-  tdl.configure({ tdjson: getTdjson(), verbosityLevel: 0 })
+  configureTdlibOnce()
   const client = tdl.createClient({ apiId: opts.apiId, apiHash: opts.apiHash, databaseDirectory, filesDirectory })
   client.on('error', err => console.error('TDLib error:', err))
 
@@ -332,6 +349,27 @@ async function checkProxies(proxies, opts) {
     await client.close()
     fs.rmSync(tdlibDir, { recursive: true, force: true })
   }
+}
+
+/**
+ * Re-check proxies for multiple rounds, carrying only working proxies forward.
+ * @param {Array} proxies - parsed proxies to check in the first round
+ * @param {number} iterations - number of rounds to run
+ * @param {(proxies: Array, iteration: number) => Promise<Array>} checker
+ *   function that checks one round and returns checkProxies-style results
+ * @returns {Promise<Array>} survivors after the final completed round
+ */
+async function runIterativeChecks(proxies, iterations, checker) {
+  const rounds = Math.max(1, iterations)
+  let current = proxies
+  let results = []
+
+  for (let iteration = 1; iteration <= rounds && current.length > 0; iteration++) {
+    results = await checker(current, iteration)
+    current = results.filter(c => c.ok).map(c => c.proxy)
+  }
+
+  return results
 }
 
 /**
@@ -383,19 +421,27 @@ async function main() {
     process.exit(1)
   }
 
-  console.error(`Checking ${proxies.length} unique proxies (dc=${opts.dc}, timeout=${opts.timeout}s, concurrency=${opts.concurrency})...\n`)
+  if (!Number.isInteger(opts.iterations) || opts.iterations < 1) {
+    console.error('--iterations must be a positive integer.')
+    process.exit(1)
+  }
 
-  const sorted = await checkProxies(proxies, {
-    apiId,
-    apiHash,
-    dc: opts.dc,
-    timeout: opts.timeout,
-    concurrency: opts.concurrency,
-    onProgress: (proxy, res, index, total) => {
-      const tag = res.ok ? `ok ${String(res.ms).padStart(5)}ms` : `-- ${res.error}`
-      const sni = proxy.sni ? ` [sni: ${proxy.sni}]` : ''
-      console.error(`[${String(index + 1).padStart(3)}/${total}] ${tag}  ${proxy.server}:${proxy.port}${sni}`)
-    }
+  console.error(`Checking ${proxies.length} unique proxies (dc=${opts.dc}, timeout=${opts.timeout}s, concurrency=${opts.concurrency}, iterations=${opts.iterations})...\n`)
+
+  const sorted = await runIterativeChecks(proxies, opts.iterations, (batch, iteration) => {
+    if (opts.iterations > 1) console.error(`Iteration ${iteration}/${opts.iterations}: checking ${batch.length} proxy/proxies...\n`)
+    return checkProxies(batch, {
+      apiId,
+      apiHash,
+      dc: opts.dc,
+      timeout: opts.timeout,
+      concurrency: opts.concurrency,
+      onProgress: (proxy, res, index, total) => {
+        const tag = res.ok ? `ok ${String(res.ms).padStart(5)}ms` : `-- ${res.error}`
+        const sni = proxy.sni ? ` [sni: ${proxy.sni}]` : ''
+        console.error(`[${String(index + 1).padStart(3)}/${total}] ${tag}  ${proxy.server}:${proxy.port}${sni}`)
+      }
+    })
   })
 
   const working = sorted.filter(c => c.ok)
@@ -417,7 +463,7 @@ async function main() {
   process.exit(0)
 }
 
-module.exports = { checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, mergeProxies, parseLink, normalizeSecret, faketlsSni }
+module.exports = { configureTdlibOnce, parseArgs, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni }
 
 if (require.main === module) main().catch(err => {
   console.error(err)

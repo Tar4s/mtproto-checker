@@ -18,6 +18,8 @@
  * result de-duplicated (by server+port+secret) via a Set.
  *
  * CLI usage:
+ *   TG_API_ID=12345 TG_API_HASH=abcdef CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret node check.js
+ *   # starts the HTTP API server on PORT (default 3080)
  *   TG_API_ID=12345 TG_API_HASH=abcdef... node check.js [sources] [options]
  *   # sources: any positional http(s) URL, a local file path, or stdin
  *   node check.js https://raw.githubusercontent.com/u/r/main/list.txt
@@ -43,7 +45,9 @@
  */
 
 const fs = require('fs')
+const http = require('http')
 const path = require('path')
+const crypto = require('crypto')
 const tdl = require('tdl')
 const { getTdjson } = require('prebuilt-tdlib')
 
@@ -384,6 +388,206 @@ async function checkProxiesFromUrls(urls, opts) {
   return checkProxies(proxies, opts)
 }
 
+async function checkSingleUrl(url, opts) {
+  const directProxy = parseLink(url)
+  if (directProxy) {
+    const checker = opts.checker || checkProxies
+    return checker([directProxy], opts)
+  }
+
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('url must be a proxy link or an http or https URL')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('url must be a proxy link or an http or https URL')
+  }
+
+  const fetcher = opts.fetcher || fetchText
+  const checker = opts.checker || checkProxies
+  const text = await fetcher(url)
+  const proxies = mergeProxies([text])
+  return checker(proxies, opts)
+}
+
+function toReport(results) {
+  return results.map(c => ({
+    server: c.proxy ? c.proxy.server : c.server,
+    port: c.proxy ? c.proxy.port : c.port,
+    sni: c.proxy ? c.proxy.sni : c.sni,
+    ok: c.ok,
+    ms: c.ms,
+    error: c.error,
+    link: c.proxy ? c.proxy.raw : c.link
+  }))
+}
+
+function jsonResponse(res, statusCode, body, headers = {}) {
+  const payload = JSON.stringify(body, null, 2)
+  res.writeHead(statusCode, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
+    ...headers
+  })
+  res.end(payload)
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && crypto.timingSafeEqual(left, right)
+}
+
+function isAuthorized(req, auth) {
+  const header = req.headers.authorization
+  if (!header || !header.startsWith('Basic ')) return false
+
+  let decoded
+  try {
+    decoded = Buffer.from(header.slice(6), 'base64').toString('utf8')
+  } catch {
+    return false
+  }
+
+  const separator = decoded.indexOf(':')
+  if (separator === -1) return false
+  const user = decoded.slice(0, separator)
+  const password = decoded.slice(separator + 1)
+  return safeEqual(user, auth.user) && safeEqual(password, auth.password)
+}
+
+function readJsonBody(req, limitBytes = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    let raw = ''
+    req.setEncoding('utf8')
+    req.on('data', chunk => {
+      size += Buffer.byteLength(chunk)
+      if (size > limitBytes) {
+        reject(Object.assign(new Error('Request body too large'), { statusCode: 413 }))
+        req.destroy()
+        return
+      }
+      raw += chunk
+    })
+    req.on('end', () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {})
+      } catch {
+        reject(Object.assign(new Error('Invalid JSON body'), { statusCode: 400 }))
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+function logRequest(logger, req, statusCode, started) {
+  const ms = Date.now() - started
+  const forwarded = req.headers['x-forwarded-for']
+  const remote = Array.isArray(forwarded) ? forwarded[0] : forwarded || req.socket.remoteAddress || '-'
+  logger(`${req.id} ${remote} ${req.method} ${req.url} ${statusCode} ${ms}ms`)
+}
+
+function createServer({ auth, checkUrl, logger = console.error }) {
+  let nextRequestId = 0
+  const realm = 'Basic realm="mtproto-checker"'
+
+  return http.createServer(async (req, res) => {
+    const started = Date.now()
+    req.id = `req-${++nextRequestId}`
+    let statusCode = 500
+
+    try {
+      if (!isAuthorized(req, auth)) {
+        statusCode = 401
+        jsonResponse(res, statusCode, { error: 'Unauthorized' }, { 'www-authenticate': realm })
+        return
+      }
+
+      if (req.url !== '/check') {
+        statusCode = 404
+        jsonResponse(res, statusCode, { error: 'Not found' })
+        return
+      }
+
+      if (req.method !== 'POST') {
+        statusCode = 405
+        jsonResponse(res, statusCode, { error: 'Method not allowed' }, { allow: 'POST' })
+        return
+      }
+
+      const body = await readJsonBody(req)
+      if (!body || typeof body.url !== 'string' || body.url.trim() === '') {
+        statusCode = 400
+        jsonResponse(res, statusCode, { error: 'Request body must include url' })
+        return
+      }
+
+      const url = body.url.trim()
+      let results
+      try {
+        results = await checkUrl(url)
+      } catch (err) {
+        statusCode = 502
+        jsonResponse(res, statusCode, {
+          error: 'Failed to check url',
+          detail: err.message || String(err)
+        })
+        return
+      }
+      const report = toReport(results)
+      statusCode = 200
+      jsonResponse(res, statusCode, {
+        url,
+        count: report.length,
+        working: report.filter(item => item.ok).length,
+        results: report
+      })
+    } catch (err) {
+      statusCode = err.statusCode || 500
+      const message = statusCode === 500 ? 'Internal server error' : err.message
+      jsonResponse(res, statusCode, { error: message })
+      if (statusCode === 500) logger(`${req.id} error ${err.stack || err.message || err}`)
+    } finally {
+      logRequest(logger, req, statusCode, started)
+    }
+  })
+}
+
+function shouldStartServer(argv) {
+  return argv.length === 0
+}
+
+async function startServer(env = process.env) {
+  const apiId = parseInt(env.TG_API_ID, 10)
+  const apiHash = env.TG_API_HASH
+  const user = env.CHECK_AUTH_USER
+  const password = env.CHECK_AUTH_PASSWORD
+  const port = parseInt(env.PORT || '3080', 10)
+
+  if (!apiId || !apiHash) throw new Error('Set TG_API_ID and TG_API_HASH (get them at https://my.telegram.org).')
+  if (!user || !password) throw new Error('Set CHECK_AUTH_USER and CHECK_AUTH_PASSWORD for HTTP Basic auth.')
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.')
+
+  const server = createServer({
+    auth: { user, password },
+    checkUrl: async url => checkSingleUrl(url, { apiId, apiHash })
+  })
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(port, () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
+
+  console.error(`MTProto checker HTTP server listening on :${port}`)
+  return server
+}
+
 /**
  * CLI entry point: resolve sources (URLs / file / stdin), check, and write
  * `<out>.json` (full report) and `<out>.txt` (working links, fastest first).
@@ -463,9 +667,9 @@ async function main() {
   process.exit(0)
 }
 
-module.exports = { configureTdlibOnce, parseArgs, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni }
+module.exports = { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni, shouldStartServer, startServer }
 
-if (require.main === module) main().catch(err => {
+if (require.main === module) (shouldStartServer(process.argv.slice(2)) ? startServer() : main()).catch(err => {
   console.error(err)
   process.exit(1)
 })

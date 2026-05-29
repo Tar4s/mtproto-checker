@@ -60,6 +60,18 @@ has `read:packages`.
 
 ## Quick Start
 
+Start the HTTP API server:
+
+```bash
+TG_API_ID=12345 \
+TG_API_HASH=abcdef \
+CHECK_AUTH_USER=admin \
+CHECK_AUTH_PASSWORD=secret \
+node check.js
+```
+
+By default it listens on port `3080`. Override it with `PORT`.
+
 Check URLs listed in `urls.txt`:
 
 ```bash
@@ -143,6 +155,64 @@ Environment variables:
 | --- | --- | --- |
 | `TG_API_ID` | yes | Telegram API ID from `my.telegram.org`. |
 | `TG_API_HASH` | yes | Telegram API hash from `my.telegram.org`. |
+| `CHECK_AUTH_USER` | HTTP server only | Basic auth username. |
+| `CHECK_AUTH_PASSWORD` | HTTP server only | Basic auth password. |
+| `PORT` | no | HTTP server port. Defaults to `3080`. |
+
+## HTTP API
+
+Running `node check.js` without CLI arguments starts the HTTP server. The server
+requires Basic auth and exposes one endpoint:
+
+```http
+POST /check
+Content-Type: application/json
+Authorization: Basic ...
+
+{ "url": "https://example.com/proxies.txt" }
+```
+
+The `url` field accepts either a remote `http(s)` proxy list or one direct
+`tg://proxy` / `https://t.me/proxy` link.
+
+Example:
+
+```bash
+curl -u admin:secret \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com/proxies.txt"}' \
+  http://127.0.0.1:3080/check
+```
+
+Direct proxy link example:
+
+```bash
+curl -u admin:secret \
+  -H 'content-type: application/json' \
+  -d '{"url":"tg://proxy?server=quackton.life&port=443&secret=7mX8dVOh9cqLULccAVs4ciR5YW5kZXgucnU"}' \
+  http://127.0.0.1:3080/check
+```
+
+Response:
+
+```json
+{
+  "url": "https://example.com/proxies.txt",
+  "count": 1,
+  "working": 1,
+  "results": [
+    {
+      "server": "1.2.3.4",
+      "port": 443,
+      "sni": "example.com",
+      "ok": true,
+      "ms": 841,
+      "error": null,
+      "link": "tg://proxy?server=1.2.3.4&port=443&secret=..."
+    }
+  ]
+}
+```
 
 ## Output
 

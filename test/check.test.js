@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const http = require('node:http')
 const test = require('node:test')
 
-const { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, runIterativeChecks, shouldStartServer } = require('../check')
+const { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')
 
 function basicAuth(user, password) {
   return `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`
@@ -55,6 +55,13 @@ test('parseArgs reads --iterations', () => {
 
   assert.equal(opts.sourcesFile, 'urls.txt')
   assert.equal(opts.iterations, 4)
+})
+
+test('parseArgs reads --proxy', () => {
+  const proxy = 'tg://proxy?server=one.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const opts = parseArgs(['--proxy', proxy])
+
+  assert.equal(opts.proxy, proxy)
 })
 
 test('configureTdlibOnce configures TDLib only once per process', () => {
@@ -230,6 +237,28 @@ test('checkSingleUrl rejects non-http source urls', async () => {
     }),
     /url must be a proxy link or an http or https URL/
   )
+})
+
+test('resolveInputProxies uses --proxy without reading other sources', async () => {
+  const proxy = 'tg://proxy?server=one.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const proxies = await resolveInputProxies(
+    { proxy, urls: ['https://example.com/list.txt'], sourcesFile: null, file: 'local.txt' },
+    {
+      readFile: () => {
+        throw new Error('files must not be read when --proxy is set')
+      },
+      readInput: async () => {
+        throw new Error('stdin must not be read when --proxy is set')
+      },
+      loadFromUrls: async () => {
+        throw new Error('urls must not be fetched when --proxy is set')
+      }
+    }
+  )
+
+  assert.equal(proxies.length, 1)
+  assert.equal(proxies[0].server, 'one.example')
+  assert.equal(proxies[0].raw, proxy)
 })
 
 test('runIterativeChecks carries only working proxies into the next iteration', async () => {

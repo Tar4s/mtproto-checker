@@ -90,11 +90,25 @@ With `npm link`:
 TG_API_ID=12345 TG_API_HASH=abcdef check-proxies --sources urls.txt
 ```
 
+Check one proxy link directly:
+
+```bash
+TG_API_ID=12345 TG_API_HASH=abcdef node check.js \
+  --proxy 'tg://proxy?server=quackton.life&port=443&secret=7mX8dVOh9cqLULccAVs4ciR5YW5kZXgucnU'
+```
+
 ## Input Sources
 
 You can provide proxies in several ways.
 
-### 1. Source URL File
+### 1. Direct Proxy Link
+
+```bash
+TG_API_ID=12345 TG_API_HASH=abcdef node check.js \
+  --proxy 'https://t.me/proxy?server=1.2.3.4&port=443&secret=...'
+```
+
+### 2. Source URL File
 
 `urls.txt` contains one remote text-list URL per line:
 
@@ -109,7 +123,7 @@ Run:
 TG_API_ID=12345 TG_API_HASH=abcdef node check.js --sources urls.txt
 ```
 
-### 2. One Or More Remote URLs
+### 3. One Or More Remote URLs
 
 ```bash
 TG_API_ID=12345 TG_API_HASH=abcdef node check.js \
@@ -123,13 +137,13 @@ Positional HTTP URLs also work:
 TG_API_ID=12345 TG_API_HASH=abcdef node check.js https://example.com/proxies.txt
 ```
 
-### 3. Local Proxy File
+### 4. Local Proxy File
 
 ```bash
 TG_API_ID=12345 TG_API_HASH=abcdef node check.js proxies.txt
 ```
 
-### 4. stdin
+### 5. stdin
 
 ```bash
 cat proxies.txt | TG_API_ID=12345 TG_API_HASH=abcdef node check.js
@@ -142,6 +156,7 @@ Input files may contain blank lines and `#` comments.
 | Option | Default | Description |
 | --- | ---: | --- |
 | `--url <url>` | none | Add a remote proxy-list URL. Can be repeated. |
+| `--proxy <link>` | none | Check one `tg://proxy` or `https://t.me/proxy` link directly. |
 | `--sources <file>` | none | Read remote source URLs from a file, one URL per line. |
 | `--dc <1-5>` | `2` | Telegram data center ID used for `testProxy`. |
 | `--timeout <sec>` | `10` | Per-proxy TDLib timeout in seconds. Decimals are allowed. |

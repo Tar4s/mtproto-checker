@@ -24,11 +24,13 @@
  *   # sources: any positional http(s) URL, a local file path, or stdin
  *   node check.js https://raw.githubusercontent.com/u/r/main/list.txt
  *   node check.js --url URL1 --url URL2
+ *   node check.js --proxy "tg://proxy?server=...&port=443&secret=..."
  *   node check.js --sources urls.txt           # file with one URL per line
  *   cat proxies.txt | node check.js
  *
  * Options:
  *   --url <url>         add a source URL (repeatable)
+ *   --proxy <link>      check one proxy link directly
  *   --sources <file>    file containing source URLs (one per line, # comments ok)
  *   --dc <1-5>          data center id to test against (default 2)
  *   --timeout <sec>     per-proxy TDLib timeout in seconds (default 10)
@@ -69,10 +71,10 @@ function configureTdlibOnce(state = tdlibConfigState, configure = tdl.configure,
 /**
  * Parse argv into an options object, collecting source URLs and/or a file path.
  * @param {string[]} argv - process.argv.slice(2)
- * @returns {{file: string|null, urls: string[], sourcesFile: string|null, dc: number, timeout: number, concurrency: number, out: string, iterations: number}}
+ * @returns {{file: string|null, urls: string[], proxy: string|null, sourcesFile: string|null, dc: number, timeout: number, concurrency: number, out: string, iterations: number}}
  */
 function parseArgs(argv) {
-  const opts = { file: null, urls: [], sourcesFile: null, dc: 2, timeout: 10, concurrency: 30, out: 'result', iterations: 1 }
+  const opts = { file: null, urls: [], proxy: null, sourcesFile: null, dc: 2, timeout: 10, concurrency: 30, out: 'result', iterations: 1 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dc') opts.dc = parseInt(argv[++i], 10)
@@ -81,6 +83,7 @@ function parseArgs(argv) {
     else if (a === '--out') opts.out = argv[++i]
     else if (a === '--iterations') opts.iterations = parseInt(argv[++i], 10)
     else if (a === '--url') opts.urls.push(argv[++i])
+    else if (a === '--proxy') opts.proxy = argv[++i]
     else if (a === '--sources') opts.sourcesFile = argv[++i]
     else if (/^https?:\/\//i.test(a)) opts.urls.push(a)
     else if (!a.startsWith('--')) opts.file = a
@@ -412,6 +415,33 @@ async function checkSingleUrl(url, opts) {
   return checker(proxies, opts)
 }
 
+async function resolveInputProxies(opts, deps = {}) {
+  const readFile = deps.readFile || (file => fs.readFileSync(file, 'utf8'))
+  const readInputFn = deps.readInput || readInput
+  const loadFromUrls = deps.loadFromUrls || loadProxiesFromUrls
+
+  if (opts.proxy) {
+    const proxy = parseLink(opts.proxy)
+    return proxy ? [proxy] : []
+  }
+
+  if (opts.sourcesFile) {
+    const text = readFile(opts.sourcesFile)
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.split('#')[0].trim()
+      if (line) opts.urls.push(line)
+    }
+  }
+
+  if (opts.urls.length > 0) {
+    console.error(`Fetching ${opts.urls.length} source URL(s)...`)
+    return loadFromUrls(opts.urls)
+  }
+
+  const input = await readInputFn(opts.file)
+  return mergeProxies([input])
+}
+
 function toReport(results) {
   return results.map(c => ({
     server: c.proxy ? c.proxy.server : c.server,
@@ -602,23 +632,7 @@ async function main() {
     process.exit(1)
   }
 
-  // A --sources file contributes one URL per line (with # comments).
-  if (opts.sourcesFile) {
-    const text = fs.readFileSync(opts.sourcesFile, 'utf8')
-    for (const rawLine of text.split(/\r?\n/)) {
-      const line = rawLine.split('#')[0].trim()
-      if (line) opts.urls.push(line)
-    }
-  }
-
-  let proxies
-  if (opts.urls.length > 0) {
-    console.error(`Fetching ${opts.urls.length} source URL(s)...`)
-    proxies = await loadProxiesFromUrls(opts.urls)
-  } else {
-    const input = await readInput(opts.file)
-    proxies = mergeProxies([input])
-  }
+  const proxies = await resolveInputProxies(opts)
 
   if (proxies.length === 0) {
     console.error('No valid tg://proxy or t.me/proxy links found.')
@@ -667,7 +681,7 @@ async function main() {
   process.exit(0)
 }
 
-module.exports = { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni, shouldStartServer, startServer }
+module.exports = { checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni, shouldStartServer, startServer }
 
 if (require.main === module) (shouldStartServer(process.argv.slice(2)) ? startServer() : main()).catch(err => {
   console.error(err)

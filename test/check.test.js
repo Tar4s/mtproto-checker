@@ -5,6 +5,7 @@ const http = require('node:http')
 const test = require('node:test')
 
 const { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')
+const packageEntry = require('..')
 
 function basicAuth(user, password) {
   return `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`
@@ -48,6 +49,11 @@ async function request(server, { method = 'POST', path = '/check', headers = {},
 test('shouldStartServer starts only for bare node check.js', () => {
   assert.equal(shouldStartServer([]), true)
   assert.equal(shouldStartServer(['--sources', 'urls.txt']), false)
+})
+
+test('package root exports public API', () => {
+  assert.equal(typeof packageEntry.checkProxiesFromUrls, 'function')
+  assert.equal(typeof packageEntry.checkRequestUrl, 'function')
 })
 
 test('parseArgs reads --iterations', () => {

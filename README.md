@@ -276,6 +276,113 @@ https://t.me/proxy?server=1.2.3.4&port=443&secret=ee...
 
 Secrets: hex (`ee...`, `dd...`), plain hex, or base64url — auto-detected. `tg://socks` links are ignored.
 
+## 🐳 Docker Deployment
+
+Structure on the server:
+
+```
+/etc/mtproto-checker/          ← source code (auto-pulled)
+├── check.js
+├── Dockerfile
+├── package.json
+└── ...
+
+/opt/mtproto-checker/          ← configs & certs (manual)
+├── docker-compose.yml
+├── default.conf
+├── fullchain.pem
+└── privkey.key
+```
+
+### `docker-compose.yml`
+
+```yaml
+services:
+  app:
+    container_name: mtproto-checker
+    build: /etc/mtproto-checker
+    restart: unless-stopped
+    environment:
+      - TG_API_ID=your_api_id
+      - TG_API_HASH=your_api_hash
+      - CHECK_AUTH_USER=admin
+      - CHECK_AUTH_PASSWORD=your_password
+      - PORT=8080
+    expose:
+      - "8080"
+
+  nginx:
+    container_name: mtproto-checker-nginx
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./privkey.key:/etc/nginx/ssl/privkey.key:ro
+      - ./fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+    depends_on:
+      - app
+```
+
+### `default.conf`
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+}
+
+server {
+    listen 80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+```
+
+### SSL Certificate
+
+Install acme.sh:
+
+```bash
+sudo apt-get install cron socat
+curl https://get.acme.sh | sh -s email=your@email.com && source ~/.bashrc
+acme.sh --set-default-ca --server letsencrypt
+```
+
+Issue certificate:
+
+```bash
+acme.sh --issue --standalone -d 'your-domain.example.com' \
+  --key-file /opt/mtproto-checker/privkey.key \
+  --fullchain-file /opt/mtproto-checker/fullchain.pem
+```
+
+Auto-renewal is set up via cron automatically. Verify with `crontab -l | grep acme`.
+
+### Deploy
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
 ## 🛠 Troubleshooting
 
 | Problem | Fix |

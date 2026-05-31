@@ -1,0 +1,43 @@
+# Generate SSH key on the server:
+#   ssh-keygen -t ed25519 -C "github-actions" -f ~/.ssh/github-actions -N ""
+#   cat ~/.ssh/github-actions.pub >> ~/.ssh/authorized_keys
+#   cat ~/.ssh/github-actions  ← this is the value for SSH_PRIVATE_KEY secret
+#
+# Required GitHub Secrets:
+#   SERVER_HOST        - server IP or domain
+#   SERVER_USER        - SSH username (e.g. root)
+#   SSH_PRIVATE_KEY    - private key from ~/.ssh/github-actions
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+
+            # Pull source code
+            if [ ! -d /etc/mtproto-checker/.git ]; then
+              git clone -b dev https://github.com/Tar4s/mtproto-checker.git /etc/mtproto-checker
+            else
+              cd /etc/mtproto-checker
+              git fetch origin dev
+              git reset --hard origin/dev
+            fi
+
+            # Rebuild and restart (compose file is in /opt, build context is /etc)
+            cd /opt/mtproto-checker
+            docker compose build --no-cache
+            docker compose up -d --force-recreate

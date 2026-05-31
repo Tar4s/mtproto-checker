@@ -4,5 +4,4 @@ node_modules/
 result*
 proxies.txt
 docs/
-.env
 test/

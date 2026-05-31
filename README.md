@@ -1,198 +1,249 @@
-# MTProto Checker
+# 🔍 mtproto-checker
 
-Telegram MTProto proxy checker powered by TDLib. It runs a real `testProxy`
-handshake through each proxy, so a successful result is closer to "works in
-Telegram" than a plain TCP/TLS port check.
+Telegram MTProto proxy health checker powered by **TDLib**. Performs a real `testProxy` handshake through each proxy — the same protocol path tdesktop uses. If it says ✅, the proxy **actually works** in Telegram.
 
-## Features
+## ⚡ Features
 
-- Parses `tg://proxy` and `https://t.me/proxy` links.
-- Loads proxies from direct links, remote lists, local files, or `stdin`.
-- De-duplicates by `server:port:secret`.
-- Supports hex and base64url secrets, including Fake-TLS SNI extraction.
-- Checks proxies concurrently and can re-check only successful proxies across
-  multiple iterations.
-- Works as a CLI, HTTP API server, or CommonJS library.
+- 🤝 Real MTProto handshake (not just a port scan)
+- 📡 Check from remote URLs, local files, or single proxy links
+- 🔄 Multi-iteration filtering — only survivors advance
+- 🌐 Built-in HTTP API server with Basic Auth
+- 🧹 Auto de-duplication by `server:port:secret`
+- 📊 Sorted output: working first, fastest on top
+- 🔐 Fake-TLS SNI extraction from `ee`-prefixed secrets
 
-## Requirements
-
-- Node.js 18+
-- Telegram API credentials: `TG_API_ID` and `TG_API_HASH`
-
-Get credentials from [my.telegram.org](https://my.telegram.org). No Telegram
-login or phone number is required; credentials are only used to initialize TDLib.
-
-## Install
+## 📦 Install
 
 ```bash
 npm install mtproto-checker
 ```
 
-For local development:
+Or clone locally:
 
 ```bash
-git clone git@github.com:Tar4s/mtproto-checker.git
+git clone https://github.com/Tar4s/mtproto-checker.git
 cd mtproto-checker
 npm install
 ```
 
-GitHub Packages users can install the scoped package:
+GitHub Packages (scoped):
 
 ```bash
 npm config set @tar4s:registry https://npm.pkg.github.com
 npm install @tar4s/mtproto-checker
 ```
 
-Private GitHub Packages require a token with `read:packages`.
+> **Requirements:** Node.js ≥ 18 · `TG_API_ID` + `TG_API_HASH` from [my.telegram.org](https://my.telegram.org)
+> No phone login needed — credentials only initialize TDLib.
 
-## CLI
+## 🔑 Environment Variables
+
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `TG_API_ID` | ✅ | Telegram API ID |
+| `TG_API_HASH` | ✅ | Telegram API Hash |
+| `CHECK_AUTH_USER` | 🌐 | HTTP Basic Auth username (server mode) |
+| `CHECK_AUTH_PASSWORD` | 🌐 | HTTP Basic Auth password (server mode) |
+| `PORT` | ❌ | Server port (default `3080`) |
+
+## 🚀 CLI Usage
 
 ```bash
-TG_API_ID=12345 TG_API_HASH=abcdef npx mtproto-checker --sources urls.txt
+TG_API_ID=12345 TG_API_HASH=abcdef node check.js [sources] [options]
 ```
 
-Common inputs:
+### Input Methods
 
 ```bash
-# One direct proxy link
-TG_API_ID=12345 TG_API_HASH=abcdef node check.js \
-  --proxy 'tg://proxy?server=1.2.3.4&port=443&secret=...'
+# Single proxy link
+node check.js --proxy "tg://proxy?server=1.2.3.4&port=443&secret=ee..."
 
-# One or more remote proxy-list URLs
-TG_API_ID=12345 TG_API_HASH=abcdef node check.js \
-  --url https://example.com/proxies.txt \
-  --url https://example.com/more.txt
+# Remote URLs (positional or --url flag, repeatable)
+node check.js https://example.com/proxies.txt
+node check.js --url URL1 --url URL2
 
-# Source URL file, local proxy file, or stdin
-TG_API_ID=12345 TG_API_HASH=abcdef node check.js --sources urls.txt
-TG_API_ID=12345 TG_API_HASH=abcdef node check.js proxies.txt
-cat proxies.txt | TG_API_ID=12345 TG_API_HASH=abcdef node check.js
+# File with source URLs (one per line, # comments ok)
+node check.js --sources urls.txt
+
+# Local proxy file
+node check.js ./my-proxies.txt
+
+# Stdin
+cat proxies.txt | node check.js
 ```
 
-Options:
+### ⚙️ Options
 
-| Option | Default | Description |
-| --- | ---: | --- |
-| `--proxy <link>` | none | Check one `tg://proxy` or `https://t.me/proxy` link directly. |
-| `--url <url>` | none | Add a remote proxy-list URL. Repeatable. |
-| `--sources <file>` | none | Read remote source URLs from a file. |
-| `--dc <1-5>` | `2` | Telegram data center used for `testProxy`. |
-| `--timeout <sec>` | `10` | Per-proxy TDLib timeout. |
-| `--concurrency <n>` | `30` | Parallel proxy checks. |
-| `--iterations <n>` | `1` | Re-check only successful proxies for `n` rounds. |
-| `--out <prefix>` | `result` | Writes `<prefix>.json` and `<prefix>.txt`. |
+| Flag | Default | Description |
+|------|:-------:|-------------|
+| `--proxy <link>` | — | Check one proxy link directly |
+| `--url <url>` | — | Add a source URL (repeatable) |
+| `--sources <file>` | — | File of source URLs |
+| `--dc <1-5>` | `2` | Data center for `testProxy` |
+| `--timeout <sec>` | `10` | Per-proxy timeout |
+| `--concurrency <n>` | `30` | Parallel checks (lower = more accurate ms) |
+| `--iterations <n>` | `1` | Re-check rounds; only working proxies advance |
+| `--out <prefix>` | `result` | Output prefix → `.json` + `.txt` |
 
-Input files may contain blank lines and `#` comments. Only MTProto proxy links
-are checked; `tg://socks` links are ignored.
+### 📄 Output Files
 
-## HTTP API
+| File | Content |
+|------|---------|
+| `result.json` | Full report: server, port, SNI, latency, error, link |
+| `result.txt` | Working proxy links only, fastest first |
 
-Running `node check.js` without arguments starts the server on `PORT` or `3080`.
-Basic auth is required.
+## 🌐 HTTP API Server
+
+Start with **no arguments**:
 
 ```bash
-TG_API_ID=12345 \
-TG_API_HASH=abcdef \
-CHECK_AUTH_USER=admin \
-CHECK_AUTH_PASSWORD=secret \
+TG_API_ID=12345 TG_API_HASH=abcdef \
+CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret \
 node check.js
 ```
 
-Endpoint:
-
-```http
-POST /check
-Content-Type: application/json
-Authorization: Basic ...
-
-{
-  "url": "https://example.com/proxies.txt",
-  "iterations": 3,
-  "concurrency": 10
-}
+```
+[mtproto-checker] ⚡ HTTP server listening on http://localhost:3080
+[mtproto-checker]   POST /check (Basic auth: admin:***)
 ```
 
-`url` accepts either a remote `http(s)` proxy list or one direct `tg://proxy` /
-`https://t.me/proxy` link. `iterations` defaults to `1`; `concurrency` defaults
-to `30`.
-
-Example:
+### `POST /check`
 
 ```bash
-curl -u admin:secret \
-  -H 'content-type: application/json' \
-  -d '{"url":"tg://proxy?server=1.2.3.4&port=443&secret=...","iterations":3,"concurrency":10}' \
-  http://127.0.0.1:3080/check
+curl -u admin:secret http://localhost:3080/check \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/proxies.txt", "iterations": 2, "concurrency": 20}'
 ```
 
-Response shape:
+**Request body:**
+
+| Field | Type | Default | Description |
+|-------|------|:-------:|-------------|
+| `url` | string | — | Proxy list URL or single `tg://proxy` link |
+| `iterations` | int | `1` | Check rounds |
+| `concurrency` | int | `30` | Parallel checks |
+
+**Response:**
 
 ```json
 {
   "url": "https://example.com/proxies.txt",
-  "iterations": 3,
-  "concurrency": 10,
-  "count": 1,
-  "working": 1,
+  "iterations": 2,
+  "concurrency": 20,
+  "count": 150,
+  "working": 42,
   "results": [
-    {
-      "server": "1.2.3.4",
-      "port": 443,
-      "sni": "example.com",
-      "ok": true,
-      "ms": 841,
-      "error": null,
-      "link": "tg://proxy?server=1.2.3.4&port=443&secret=..."
-    }
+    { "server": "1.2.3.4", "port": 443, "sni": "example.com", "ok": true, "ms": 312, "error": null, "link": "tg://proxy?..." }
   ]
 }
 ```
 
-## Library Usage
+**Error codes:** `400` bad request · `401` unauthorized · `404` wrong endpoint · `405` wrong method · `502` upstream fetch failed
+
+## 📚 Library API
 
 ```js
-const { checkRequestUrl, checkProxiesFromUrls } = require('mtproto-checker')
-
-const opts = {
-  apiId: Number(process.env.TG_API_ID),
-  apiHash: process.env.TG_API_HASH,
-  concurrency: 30,
-  iterations: 2
-}
-
-const direct = await checkRequestUrl('tg://proxy?server=1.2.3.4&port=443&secret=...', opts)
-const fromLists = await checkProxiesFromUrls(['https://example.com/proxies.txt'], opts)
-
-console.log(direct, fromLists)
+const { checkProxyLink, checkProxiesFromURIs, startServer } = require('mtproto-checker')
 ```
 
-Main exports:
+### `checkProxyLink(link, opts)` → `Promise<Array>`
 
-- `checkRequestUrl(url, opts)`
-- `checkProxiesFromUrls(urls, opts)`
-- `loadProxiesFromUrls(urls)`
-- `checkProxies(proxies, opts)`
-- `mergeProxies(texts)`
-- `parseLink(line)`
-- `normalizeSecret(secret)`
-- `faketlsSni(hexSecret)`
+Check a single `tg://proxy` or `https://t.me/proxy` link.
 
-## Output
+```js
+const results = await checkProxyLink(
+  'tg://proxy?server=1.2.3.4&port=443&secret=ee...',
+  { apiId: 12345, apiHash: 'abcdef' }
+)
+```
 
-CLI runs write:
+```
+[mtproto-checker] Checking 1.2.3.4:443 [example.com]...
+[mtproto-checker] ✓ 312ms
+```
 
-- `result.json` or `<out>.json`: full report for the final completed round.
-- `result.txt` or `<out>.txt`: working proxy links, fastest first.
+### `checkProxiesFromURIs(uris, opts)` → `Promise<Array>`
 
-Use `--out fresh` to write `fresh.json` and `fresh.txt`.
+Check proxies from remote URLs, local files, or both. Auto-detects type per entry.
 
-## Troubleshooting
+```js
+// Remote
+const results = await checkProxiesFromURIs(
+  'https://example.com/proxies.txt',
+  { apiId: 12345, apiHash: 'abcdef' }
+)
 
-- `Set TG_API_ID and TG_API_HASH`: export both credentials or prefix the command.
-- Noisy latency: reduce `--concurrency`.
-- Need only stable proxies: increase `--iterations`.
-- Temporary TDLib files are created in `.proxy-checker-td/` and removed after the run.
+// Local
+const results = await checkProxiesFromURIs('./proxies.txt', opts)
 
-## License
+// Mix
+const results = await checkProxiesFromURIs([
+  'https://example.com/list1.txt',
+  './local-list.txt',
+  'https://example.com/list2.txt'
+], { apiId: 12345, apiHash: 'abcdef', iterations: 2, concurrency: 20 })
+```
 
-No license file is currently included.
+```
+[mtproto-checker] Loading 3 source(s)...
+  ↓ https://example.com/list1.txt
+  ◈ ./local-list.txt
+  ↓ https://example.com/list2.txt
+[mtproto-checker] Checking 150 proxies (dc=2, timeout=10s, concurrency=30, iterations=2)...
+
+  [  1/150] ✓   312ms  1.2.3.4:443 [example.com]
+  [  2/150] ✗ Timeout  5.6.7.8:443
+  ...
+
+[mtproto-checker] Done: 42/150 working.
+```
+
+### `startServer(opts)` → `Promise<http.Server>`
+
+Start the HTTP API server programmatically.
+
+```js
+const server = await startServer({
+  apiId: 12345,
+  apiHash: 'abcdef',
+  user: 'admin',
+  password: 'secret',
+  port: 8080
+})
+```
+
+All fields are optional — falls back to env vars if omitted.
+
+### `opts` Reference
+
+| Key | Type | Default | Description |
+|-----|------|:-------:|-------------|
+| `apiId` | number | — | Telegram API ID |
+| `apiHash` | string | — | Telegram API Hash |
+| `dc` | number | `2` | Data center (1–5) |
+| `timeout` | number | `10` | Timeout in seconds |
+| `concurrency` | number | `30` | Parallel checks |
+| `iterations` | number | `1` | Check rounds |
+| `onProgress` | function | — | `(proxy, res, index, total) => void` |
+
+## 🧩 Proxy Link Formats
+
+```
+tg://proxy?server=1.2.3.4&port=443&secret=ee...
+https://t.me/proxy?server=1.2.3.4&port=443&secret=ee...
+```
+
+Secrets: hex (`ee...`, `dd...`), plain hex, or base64url — auto-detected. `tg://socks` links are ignored.
+
+## 🛠 Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `Set TG_API_ID and TG_API_HASH` | Export both env vars |
+| Noisy latency | Reduce `--concurrency` |
+| Need stable proxies only | Increase `--iterations` |
+| TDLib leftover files | `.proxy-checker-td/` is auto-cleaned after each run |
+
+## 📜 License
+
+ISC

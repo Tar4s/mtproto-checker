@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const http = require('node:http')
 const test = require('node:test')
 
-const { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')
+const { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')._internals
 const packageEntry = require('..')
 
 function basicAuth(user, password) {
@@ -52,8 +52,9 @@ test('shouldStartServer starts only for bare node check.js', () => {
 })
 
 test('package root exports public API', () => {
-  assert.equal(typeof packageEntry.checkProxiesFromUrls, 'function')
-  assert.equal(typeof packageEntry.checkRequestUrl, 'function')
+  assert.equal(typeof packageEntry.checkProxyLink, 'function')
+  assert.equal(typeof packageEntry.checkProxiesFromURIs, 'function')
+  assert.equal(typeof packageEntry.startServer, 'function')
 })
 
 test('parseArgs reads --iterations', () => {

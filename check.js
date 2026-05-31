@@ -415,6 +415,77 @@ async function checkSingleUrl(url, opts) {
   return checker(proxies, opts)
 }
 
+/**
+ * Load proxies from a local file path.
+ * @param {string} filePath - path to a text file with proxy links (one per line)
+ * @returns {Array} de-duplicated parsed proxies
+ */
+function loadProxiesFromFile(filePath) {
+  const text = fs.readFileSync(filePath, 'utf8')
+  return mergeProxies([text])
+}
+
+/**
+ * Check proxies from URIs — supports both remote URLs (http/https) and local
+ * file paths. Detects type automatically per entry.
+ * @param {string|string[]} uris - URL(s) or file path(s) with proxy links
+ * @param {{apiId: number, apiHash: string, dc?: number, timeout?: number, concurrency?: number, iterations?: number, onProgress?: Function}} opts
+ * @returns {Promise<Array<{proxy: object, ok: boolean, ms: number, error: string|null}>>}
+ */
+async function checkProxiesFromURIs(uris, opts) {
+  const list = Array.isArray(uris) ? uris : [uris]
+  console.error(`[mtproto-checker] Loading ${list.length} source(s)...`)
+  const texts = await Promise.all(list.map(uri => {
+    if (/^https?:\/\//i.test(uri)) {
+      console.error(`  ↓ ${uri}`)
+      return fetchText(uri).catch(err => { console.error(`  ✗ Skipping ${uri}: ${err.message}`); return '' })
+    }
+    console.error(`  ◈ ${uri}`)
+    return Promise.resolve(fs.readFileSync(uri, 'utf8'))
+  }))
+  const proxies = mergeProxies(texts)
+  if (proxies.length === 0) {
+    console.error('[mtproto-checker] No valid proxy links found.')
+    return []
+  }
+  const iterations = opts.iterations ?? 1
+  console.error(`[mtproto-checker] Checking ${proxies.length} proxies (dc=${opts.dc ?? 2}, timeout=${opts.timeout ?? 10}s, concurrency=${opts.concurrency ?? 30}, iterations=${iterations})...\n`)
+  const results = await runIterativeChecks(proxies, iterations, (batch, iteration) => {
+    if (iterations > 1) console.error(`[mtproto-checker] Iteration ${iteration}/${iterations}: ${batch.length} proxies\n`)
+    return checkProxies(batch, {
+      ...opts,
+      onProgress: (proxy, res, index, total) => {
+        const tag = res.ok ? `✓ ${String(res.ms).padStart(5)}ms` : `✗ ${res.error}`
+        const sni = proxy.sni ? ` [${proxy.sni}]` : ''
+        console.error(`  [${String(index + 1).padStart(3)}/${total}] ${tag}  ${proxy.server}:${proxy.port}${sni}`)
+        if (opts.onProgress) opts.onProgress(proxy, res, index, total)
+      }
+    })
+  })
+  const working = results.filter(c => c.ok).length
+  console.error(`\n[mtproto-checker] Done: ${working}/${proxies.length} working.`)
+  return results
+}
+
+/**
+ * Check a single tg://proxy or t.me/proxy link via real MTProto handshake.
+ * @param {string} link - proxy link (tg://proxy?... or https://t.me/proxy?...)
+ * @param {{apiId: number, apiHash: string, dc?: number, timeout?: number, iterations?: number, onProgress?: Function}} opts
+ * @returns {Promise<Array<{proxy: object, ok: boolean, ms: number, error: string|null}>>}
+ * @throws if the link is not a valid MTProto proxy link
+ */
+async function checkProxyLink(link, opts) {
+  const proxy = parseLink(link)
+  if (!proxy) throw new Error('Invalid proxy link. Expected tg://proxy?... or https://t.me/proxy?...')
+  const sni = proxy.sni ? ` [${proxy.sni}]` : ''
+  console.error(`[mtproto-checker] Checking ${proxy.server}:${proxy.port}${sni}...`)
+  const results = await runIterativeChecks([proxy], opts.iterations ?? 1, batch => checkProxies(batch, opts))
+  const r = results[0]
+  if (r)
+    console.error(`[mtproto-checker] ${r.ok ? `✓ ${r.ms}ms` : `✗ ${r.error}`}`)
+  return results
+}
+
 async function loadSingleUrlProxies(url, opts = {}) {
   const directProxy = parseLink(url)
   if (directProxy) return [directProxy]
@@ -629,16 +700,22 @@ function shouldStartServer(argv) {
   return argv.length === 0
 }
 
-async function startServer(env = process.env) {
-  const apiId = parseInt(env.TG_API_ID, 10)
-  const apiHash = env.TG_API_HASH
-  const user = env.CHECK_AUTH_USER
-  const password = env.CHECK_AUTH_PASSWORD
-  const port = parseInt(env.PORT || '3080', 10)
+/**
+ * Start the HTTP API server for proxy checking.
+ * @param {{apiId?: number, apiHash?: string, user?: string, password?: string, port?: number}} opts
+ *   All fields fall back to environment variables if omitted.
+ * @returns {Promise<http.Server>} the listening server instance
+ */
+async function startServer(opts = {}) {
+  const apiId = opts.apiId ?? parseInt(process.env.TG_API_ID, 10)
+  const apiHash = opts.apiHash ?? process.env.TG_API_HASH
+  const user = opts.user ?? process.env.CHECK_AUTH_USER
+  const password = opts.password ?? process.env.CHECK_AUTH_PASSWORD
+  const port = opts.port ?? parseInt(process.env.PORT || '3080', 10)
 
   if (!apiId || !apiHash) throw new Error('Set TG_API_ID and TG_API_HASH (get them at https://my.telegram.org).')
   if (!user || !password) throw new Error('Set CHECK_AUTH_USER and CHECK_AUTH_PASSWORD for HTTP Basic auth.')
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.')
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port must be a valid TCP port (1-65535).')
 
   const server = createServer({
     auth: { user, password },
@@ -658,7 +735,8 @@ async function startServer(env = process.env) {
     })
   })
 
-  console.error(`MTProto checker HTTP server listening on :${port}`)
+  console.error(`[mtproto-checker] ⚡ HTTP server listening on http://localhost:${port}`)
+  console.error(`[mtproto-checker]   POST /check (Basic auth: ${user}:***)`)
   return server
 }
 
@@ -725,7 +803,8 @@ async function main() {
   process.exit(0)
 }
 
-module.exports = { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, checkProxiesFromUrls, loadProxiesFromUrls, checkProxies, runIterativeChecks, mergeProxies, parseLink, normalizeSecret, faketlsSni, shouldStartServer, startServer }
+module.exports = { checkProxyLink, checkProxiesFromURIs, startServer }
+module.exports._internals = { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer }
 
 if (require.main === module) (shouldStartServer(process.argv.slice(2)) ? startServer() : main()).catch(err => {
   console.error(err)

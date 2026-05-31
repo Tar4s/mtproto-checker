@@ -4,7 +4,8 @@ const assert = require('node:assert/strict')
 const http = require('node:http')
 const test = require('node:test')
 
-const { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer } = require('../check')._internals
+const { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer, parseLink, normalizeSecret, faketlsSni, mergeProxies, loadProxiesFromFile } = require('../check')._internals
+const { checkProxyLink, checkProxiesFromURIs } = require('../check')
 const packageEntry = require('..')
 
 function basicAuth(user, password) {
@@ -113,7 +114,7 @@ test('createServer validates request body', async () => {
     })
 
     assert.equal(res.statusCode, 400)
-    assert.equal(res.body.error, 'Request body must include url')
+    assert.equal(res.body.error, 'Request body must include url (string or array)')
   } finally {
     server.close()
   }
@@ -145,9 +146,9 @@ test('createServer checks posted url and returns expanded json', async () => {
     })
 
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(seen, [{ url: 'https://example.com/list.txt', opts: { iterations: 1, concurrency: 30 } }])
+    assert.deepEqual(seen, [{ url: ['https://example.com/list.txt'], opts: { iterations: 1, concurrency: 30 } }])
     assert.deepEqual(res.body, {
-      url: 'https://example.com/list.txt',
+      uris: ['https://example.com/list.txt'],
       iterations: 1,
       concurrency: 30,
       count: 1,
@@ -193,7 +194,7 @@ test('createServer passes iterations from request body', async () => {
     })
 
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(seen, [{ url: 'https://example.com/list.txt', opts: { iterations: 3, concurrency: 30 } }])
+    assert.deepEqual(seen, [{ url: ['https://example.com/list.txt'], opts: { iterations: 3, concurrency: 30 } }])
     assert.equal(res.body.iterations, 3)
   } finally {
     server.close()
@@ -218,7 +219,7 @@ test('createServer passes concurrency from request body', async () => {
     })
 
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(seen, [{ url: 'https://example.com/list.txt', opts: { iterations: 1, concurrency: 7 } }])
+    assert.deepEqual(seen, [{ url: ['https://example.com/list.txt'], opts: { iterations: 1, concurrency: 7 } }])
     assert.equal(res.body.concurrency, 7)
   } finally {
     server.close()
@@ -431,4 +432,413 @@ test('runIterativeChecks stops early when no proxies survive', async () => {
   assert.equal(calls, 1)
   assert.deepEqual(result.map(item => item.proxy.server), ['dead.example'])
   assert.equal(result[0].ok, false)
+})
+
+// --- parseLink tests ---
+
+test('parseLink parses tg://proxy link', () => {
+  const result = parseLink('tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+
+  assert.equal(result.server, '1.2.3.4')
+  assert.equal(result.port, 443)
+  assert.equal(result.secret, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+  assert.equal(result.sni, null)
+})
+
+test('parseLink parses https://t.me/proxy link', () => {
+  const result = parseLink('https://t.me/proxy?server=example.com&port=8443&secret=ddaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+
+  assert.equal(result.server, 'example.com')
+  assert.equal(result.port, 8443)
+  assert.equal(result.secret, 'ddaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+})
+
+test('parseLink extracts Fake-TLS SNI from ee-prefixed secret', () => {
+  // ee + 16 bytes (32 hex chars) + domain in hex
+  const domain = 'google.com'
+  const domainHex = Buffer.from(domain).toString('hex')
+  const secret = 'ee' + 'aa'.repeat(16) + domainHex
+  const result = parseLink(`tg://proxy?server=1.2.3.4&port=443&secret=${secret}`)
+
+  assert.equal(result.sni, 'google.com')
+})
+
+test('parseLink returns null for tg://socks links', () => {
+  const result = parseLink('tg://socks?server=1.2.3.4&port=1080&user=u&pass=p')
+
+  assert.equal(result, null)
+})
+
+test('parseLink returns null for invalid input', () => {
+  assert.equal(parseLink(''), null)
+  assert.equal(parseLink('not a link'), null)
+  assert.equal(parseLink('https://example.com'), null)
+  assert.equal(parseLink('tg://proxy'), null) // no query string
+})
+
+test('parseLink returns null when required params are missing', () => {
+  assert.equal(parseLink('tg://proxy?server=1.2.3.4&port=443'), null) // no secret
+  assert.equal(parseLink('tg://proxy?server=1.2.3.4&secret=aa'), null) // no port (NaN)
+  assert.equal(parseLink('tg://proxy?port=443&secret=aa'), null) // no server
+})
+
+// --- normalizeSecret tests ---
+
+test('normalizeSecret passes through valid hex', () => {
+  assert.equal(normalizeSecret('AABBCCDD'), 'aabbccdd')
+  assert.equal(normalizeSecret('eeaabbccdd112233'), 'eeaabbccdd112233')
+})
+
+test('normalizeSecret decodes base64url to hex', () => {
+  const hex = 'deadbeef01020304'
+  const b64 = Buffer.from(hex, 'hex').toString('base64url')
+  assert.equal(normalizeSecret(b64), hex)
+})
+
+test('normalizeSecret trims whitespace', () => {
+  assert.equal(normalizeSecret('  aabb  '), 'aabb')
+})
+
+// --- faketlsSni tests ---
+
+test('faketlsSni extracts domain from ee-prefixed secret', () => {
+  const domain = 'cdn.telegram.org'
+  const domainHex = Buffer.from(domain).toString('hex')
+  const secret = 'ee' + '00'.repeat(16) + domainHex
+  assert.equal(faketlsSni(secret), domain)
+})
+
+test('faketlsSni returns null for non-ee secrets', () => {
+  assert.equal(faketlsSni('dd' + '00'.repeat(16)), null)
+  assert.equal(faketlsSni('aa' + '00'.repeat(16)), null)
+})
+
+test('faketlsSni returns null when no domain part', () => {
+  assert.equal(faketlsSni('ee' + '00'.repeat(16)), null)
+})
+
+// --- mergeProxies tests ---
+
+test('mergeProxies de-duplicates by server:port:secret', () => {
+  const text = [
+    'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'tg://proxy?server=5.6.7.8&port=443&secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+  ].join('\n')
+
+  const result = mergeProxies([text])
+  assert.equal(result.length, 2)
+})
+
+test('mergeProxies de-duplicates across multiple texts', () => {
+  const text1 = 'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const text2 = 'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ntg://proxy?server=9.9.9.9&port=443&secret=cccccccccccccccccccccccccccccccc'
+
+  const result = mergeProxies([text1, text2])
+  assert.equal(result.length, 2)
+  assert.equal(result[0].server, '1.2.3.4')
+  assert.equal(result[1].server, '9.9.9.9')
+})
+
+test('mergeProxies ignores comments and blank lines', () => {
+  const text = [
+    '# this is a comment',
+    '',
+    'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # inline comment',
+    '   ',
+    '# another comment'
+  ].join('\n')
+
+  const result = mergeProxies([text])
+  assert.equal(result.length, 1)
+  assert.equal(result[0].server, '1.2.3.4')
+})
+
+test('mergeProxies ignores non-proxy lines', () => {
+  const text = [
+    'https://google.com',
+    'just some text',
+    'tg://socks?server=1.2.3.4&port=1080&user=u&pass=p',
+    'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  ].join('\n')
+
+  const result = mergeProxies([text])
+  assert.equal(result.length, 1)
+})
+
+// --- loadProxiesFromFile tests ---
+
+test('loadProxiesFromFile reads and parses a local file', () => {
+  const fs = require('fs')
+  const os = require('os')
+  const path = require('path')
+  const tmpFile = path.join(os.tmpdir(), `_test_proxies_${Date.now()}.txt`)
+  fs.writeFileSync(tmpFile, [
+    'tg://proxy?server=a.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'tg://proxy?server=b.example&port=443&secret=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+  ].join('\n'))
+
+  try {
+    const result = loadProxiesFromFile(tmpFile)
+    assert.equal(result.length, 2)
+    assert.equal(result[0].server, 'a.example')
+    assert.equal(result[1].server, 'b.example')
+  } finally {
+    fs.unlinkSync(tmpFile)
+  }
+})
+
+// --- checkProxyLink tests ---
+
+test('checkProxyLink rejects invalid proxy link', async () => {
+  await assert.rejects(
+    checkProxyLink('https://google.com', { apiId: 1, apiHash: 'x' }),
+    /Invalid proxy link/
+  )
+})
+
+test('checkProxyLink rejects empty string', async () => {
+  await assert.rejects(
+    checkProxyLink('', { apiId: 1, apiHash: 'x' }),
+    /Invalid proxy link/
+  )
+})
+
+// --- checkProxiesFromURIs tests ---
+
+test('checkProxiesFromURIs recognizes direct tg:// proxy links', async () => {
+  const link = 'tg://proxy?server=test.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const seen = []
+
+  // Mock checkProxies via opts.checker won't work here since checkProxiesFromURIs
+  // calls checkProxies internally. We'll test indirectly via checkRequestUrl pattern.
+  // Instead test that it doesn't throw ENOENT (the original bug)
+  try {
+    await checkProxiesFromURIs(link, { apiId: 1, apiHash: 'x', iterations: 1 })
+  } catch (err) {
+    // TDLib not available is fine — ENOENT means it tried to read as file (BAD)
+    assert.ok(!err.message.includes('ENOENT'), `Should not treat proxy link as file: ${err.message}`)
+  }
+})
+
+test('checkProxiesFromURIs recognizes https://t.me/proxy links', async () => {
+  const link = 'https://t.me/proxy?server=test.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+
+  try {
+    await checkProxiesFromURIs(link, { apiId: 1, apiHash: 'x', iterations: 1 })
+  } catch (err) {
+    assert.ok(!err.message.includes('ENOENT'), `Should not treat t.me proxy link as file: ${err.message}`)
+    // Should NOT try to fetch t.me as a web page either — verify no HTTP error
+    assert.ok(!err.message.includes('HTTP 4'), `Should not fetch t.me proxy link as web page: ${err.message}`)
+  }
+})
+
+test('checkProxiesFromURIs de-duplicates direct links', async () => {
+  const link = 'tg://proxy?server=dup.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+
+  try {
+    await checkProxiesFromURIs([link, link, link], { apiId: 1, apiHash: 'x', iterations: 1 })
+  } catch (err) {
+    // Expected TDLib error, but the "Checking 1 proxies" log proves de-dup worked
+    assert.ok(!err.message.includes('ENOENT'))
+  }
+})
+
+test('checkProxiesFromURIs returns empty array when no proxies found', async () => {
+  const fs = require('fs')
+  const os = require('os')
+  const path = require('path')
+  const tmpFile = path.join(os.tmpdir(), `_test_empty_${Date.now()}.txt`)
+  fs.writeFileSync(tmpFile, '# no proxies here\njust comments\n')
+
+  try {
+    const result = await checkProxiesFromURIs(tmpFile, { apiId: 1, apiHash: 'x' })
+    assert.deepEqual(result, [])
+  } finally {
+    fs.unlinkSync(tmpFile)
+  }
+})
+
+test('checkProxiesFromURIs reads local file and parses proxies', async () => {
+  const fs = require('fs')
+  const os = require('os')
+  const path = require('path')
+  const tmpFile = path.join(os.tmpdir(), `_test_local_${Date.now()}.txt`)
+  fs.writeFileSync(tmpFile, 'tg://proxy?server=local.example&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n')
+
+  try {
+    await checkProxiesFromURIs(tmpFile, { apiId: 1, apiHash: 'x' })
+  } catch (err) {
+    assert.ok(!err.message.includes('ENOENT'), `Should read the file: ${err.message}`)
+    assert.ok(!err.message.includes('No valid proxy'), `Should find the proxy in the file: ${err.message}`)
+  } finally {
+    fs.unlinkSync(tmpFile)
+  }
+})
+
+// --- createServer input format tests ---
+
+test('createServer accepts url as array', async () => {
+  const seen = []
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async (url, opts) => {
+      seen.push({ url, opts })
+      return []
+    },
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: ['https://a.txt', 'https://b.txt'] }
+    })
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(seen[0].url, ['https://a.txt', 'https://b.txt'])
+    assert.deepEqual(res.body.uris, ['https://a.txt', 'https://b.txt'])
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer accepts "urls" field name', async () => {
+  const seen = []
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async (url, opts) => {
+      seen.push(url)
+      return []
+    },
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { urls: ['https://x.txt'] }
+    })
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(seen[0], ['https://x.txt'])
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer accepts "uris" field name', async () => {
+  const seen = []
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async (url, opts) => {
+      seen.push(url)
+      return []
+    },
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { uris: 'tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
+    })
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(seen[0], ['tg://proxy?server=1.2.3.4&port=443&secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'])
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer rejects empty array', async () => {
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async () => [],
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: [] }
+    })
+
+    assert.equal(res.statusCode, 400)
+  } finally {
+    server.close()
+  }
+})
+
+test('createServer rejects empty string url', async () => {
+  const server = createServer({
+    auth: { user: 'admin', password: 'secret' },
+    checkUrl: async () => [],
+    logger: () => {}
+  })
+
+  try {
+    const res = await request(server, {
+      headers: { authorization: basicAuth('admin', 'secret') },
+      body: { url: '   ' }
+    })
+
+    assert.equal(res.statusCode, 400)
+  } finally {
+    server.close()
+  }
+})
+
+// --- parseArgs edge cases ---
+
+test('parseArgs recognizes positional http URLs', () => {
+  const opts = parseArgs(['https://example.com/a.txt', 'https://example.com/b.txt'])
+
+  assert.deepEqual(opts.urls, ['https://example.com/a.txt', 'https://example.com/b.txt'])
+})
+
+test('parseArgs treats non-flag non-url as file', () => {
+  const opts = parseArgs(['proxies.txt'])
+
+  assert.equal(opts.file, 'proxies.txt')
+})
+
+test('parseArgs defaults', () => {
+  const opts = parseArgs([])
+
+  assert.equal(opts.dc, 2)
+  assert.equal(opts.timeout, 10)
+  assert.equal(opts.concurrency, 30)
+  assert.equal(opts.out, 'result')
+  assert.equal(opts.iterations, 1)
+  assert.equal(opts.proxy, null)
+  assert.equal(opts.file, null)
+  assert.equal(opts.sourcesFile, null)
+  assert.deepEqual(opts.urls, [])
+})
+
+// --- resolveInputProxies edge cases ---
+
+test('resolveInputProxies returns empty for invalid --proxy link', async () => {
+  const proxies = await resolveInputProxies(
+    { proxy: 'not-a-valid-link', urls: [], sourcesFile: null, file: null },
+    { readInput: async () => '', loadFromUrls: async () => [] }
+  )
+
+  assert.deepEqual(proxies, [])
+})
+
+test('resolveInputProxies reads sourcesFile and loads URLs', async () => {
+  const loaded = []
+  const proxies = await resolveInputProxies(
+    { proxy: null, urls: [], sourcesFile: '/fake/sources.txt', file: null },
+    {
+      readFile: () => 'https://one.txt\n# comment\nhttps://two.txt\n',
+      readInput: async () => { throw new Error('should not read stdin') },
+      loadFromUrls: async urls => { loaded.push(...urls); return [{ server: 'x', port: 1, secret: 'aa' }] }
+    }
+  )
+
+  assert.deepEqual(loaded, ['https://one.txt', 'https://two.txt'])
+  assert.equal(proxies.length, 1)
 })

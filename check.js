@@ -19,7 +19,7 @@
  *
  * CLI usage:
  *   TG_API_ID=12345 TG_API_HASH=abcdef CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret node check.js
- *   # starts the HTTP API server on PORT (default 3080)
+ *   # starts the HTTP API server on PORT (default 8080)
  *   TG_API_ID=12345 TG_API_HASH=abcdef... node check.js [sources] [options]
  *   # sources: any positional http(s) URL, a local file path, or stdin
  *   node check.js https://raw.githubusercontent.com/u/r/main/list.txt
@@ -435,7 +435,14 @@ function loadProxiesFromFile(filePath) {
 async function checkProxiesFromURIs(uris, opts) {
   const list = Array.isArray(uris) ? uris : [uris]
   console.error(`[mtproto-checker] Loading ${list.length} source(s)...`)
+  const directProxies = []
   const texts = await Promise.all(list.map(uri => {
+    const parsed = parseLink(uri)
+    if (parsed) {
+      console.error(`  ⚡ ${parsed.server}:${parsed.port}`)
+      directProxies.push(parsed)
+      return Promise.resolve('')
+    }
     if (/^https?:\/\//i.test(uri)) {
       console.error(`  ↓ ${uri}`)
       return fetchText(uri).catch(err => { console.error(`  ✗ Skipping ${uri}: ${err.message}`); return '' })
@@ -443,7 +450,15 @@ async function checkProxiesFromURIs(uris, opts) {
     console.error(`  ◈ ${uri}`)
     return Promise.resolve(fs.readFileSync(uri, 'utf8'))
   }))
-  const proxies = mergeProxies(texts)
+  const fromTexts = mergeProxies(texts)
+  const seen = new Set(fromTexts.map(p => `${p.server}:${p.port}:${p.secret}`))
+  const proxies = [...fromTexts]
+  for (const p of directProxies) {
+    const key = `${p.server}:${p.port}:${p.secret}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    proxies.push(p)
+  }
   if (proxies.length === 0) {
     console.error('[mtproto-checker] No valid proxy links found.')
     return []
@@ -645,9 +660,10 @@ function createServer({ auth, checkUrl, logger = console.error }) {
       }
 
       const body = await readJsonBody(req)
-      if (!body || typeof body.url !== 'string' || body.url.trim() === '') {
+      const uris = body.url || body.urls || body.uri || body.uris
+      if (!uris || (typeof uris === 'string' && uris.trim() === '') || (Array.isArray(uris) && uris.length === 0)) {
         statusCode = 400
-        jsonResponse(res, statusCode, { error: 'Request body must include url' })
+        jsonResponse(res, statusCode, { error: 'Request body must include url (string or array)' })
         return
       }
       const iterations = body.iterations === undefined ? 1 : body.iterations
@@ -663,10 +679,10 @@ function createServer({ auth, checkUrl, logger = console.error }) {
         return
       }
 
-      const url = body.url.trim()
+      const input = Array.isArray(uris) ? uris.map(u => u.trim()) : [uris.trim()]
       let results
       try {
-        results = await checkUrl(url, { iterations, concurrency })
+        results = await checkUrl(input, { iterations, concurrency })
       } catch (err) {
         statusCode = 502
         jsonResponse(res, statusCode, {
@@ -675,15 +691,14 @@ function createServer({ auth, checkUrl, logger = console.error }) {
         })
         return
       }
-      const report = toReport(results)
       statusCode = 200
       jsonResponse(res, statusCode, {
-        url,
+        uris: input,
         iterations,
         concurrency,
-        count: report.length,
-        working: report.filter(item => item.ok).length,
-        results: report
+        count: results.length,
+        working: results.filter(item => item.ok).length,
+        results
       })
     } catch (err) {
       statusCode = err.statusCode || 500
@@ -711,7 +726,7 @@ async function startServer(opts = {}) {
   const apiHash = opts.apiHash ?? process.env.TG_API_HASH
   const user = opts.user ?? process.env.CHECK_AUTH_USER
   const password = opts.password ?? process.env.CHECK_AUTH_PASSWORD
-  const port = opts.port ?? parseInt(process.env.PORT || '3080', 10)
+  const port = opts.port ?? parseInt(process.env.PORT || '8080', 10)
 
   if (!apiId || !apiHash) throw new Error('Set TG_API_ID and TG_API_HASH (get them at https://my.telegram.org).')
   if (!user || !password) throw new Error('Set CHECK_AUTH_USER and CHECK_AUTH_PASSWORD for HTTP Basic auth.')
@@ -719,7 +734,7 @@ async function startServer(opts = {}) {
 
   const server = createServer({
     auth: { user, password },
-    checkUrl: async (url, requestOpts) => checkRequestUrl(url, {
+    checkUrl: async (url, requestOpts) => checkProxiesFromURIs(url, {
       apiId,
       apiHash,
       iterations: requestOpts.iterations,
@@ -804,7 +819,7 @@ async function main() {
 }
 
 module.exports = { checkProxyLink, checkProxiesFromURIs, startServer }
-module.exports._internals = { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer }
+module.exports._internals = { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer, parseLink, normalizeSecret, faketlsSni, mergeProxies, loadProxiesFromFile }
 
 if (require.main === module) (shouldStartServer(process.argv.slice(2)) ? startServer() : main()).catch(err => {
   console.error(err)

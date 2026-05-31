@@ -5,7 +5,7 @@ Telegram MTProto proxy health checker powered by **TDLib**. Performs a real `tes
 ## ⚡ Features
 
 - 🤝 Real MTProto handshake (not just a port scan)
-- 📡 Check from remote URLs, local files, or single proxy links
+- 📡 Check from remote URLs, local files, direct proxy links, or any mix
 - 🔄 Multi-iteration filtering — only survivors advance
 - 🌐 Built-in HTTP API server with Basic Auth
 - 🧹 Auto de-duplication by `server:port:secret`
@@ -15,10 +15,14 @@ Telegram MTProto proxy health checker powered by **TDLib**. Performs a real `tes
 ## 📦 Install
 
 ```bash
+# Global — gives you the `mtproto-checker` command
+npm install -g mtproto-checker
+
+# Local dependency
 npm install mtproto-checker
 ```
 
-Or clone locally:
+Or clone:
 
 ```bash
 git clone https://github.com/Tar4s/mtproto-checker.git
@@ -44,32 +48,46 @@ npm install @tar4s/mtproto-checker
 | `TG_API_HASH` | ✅ | Telegram API Hash |
 | `CHECK_AUTH_USER` | 🌐 | HTTP Basic Auth username (server mode) |
 | `CHECK_AUTH_PASSWORD` | 🌐 | HTTP Basic Auth password (server mode) |
-| `PORT` | ❌ | Server port (default `3080`) |
+| `PORT` | ❌ | Server port (default `8080`) |
 
-## 🚀 CLI Usage
+## 🚀 Quick Start (Global)
+
+After `npm i -g mtproto-checker`:
 
 ```bash
-TG_API_ID=12345 TG_API_HASH=abcdef node check.js [sources] [options]
+# Start HTTP server (no arguments)
+TG_API_ID=12345 TG_API_HASH=abcdef \
+CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret \
+check-proxies
+
+# CLI mode (with arguments)
+TG_API_ID=12345 TG_API_HASH=abcdef check-proxies --sources urls.txt
+```
+
+## 🖥 CLI Usage
+
+```bash
+TG_API_ID=12345 TG_API_HASH=abcdef check-proxies [sources] [options]
 ```
 
 ### Input Methods
 
 ```bash
 # Single proxy link
-node check.js --proxy "tg://proxy?server=1.2.3.4&port=443&secret=ee..."
+check-proxies --proxy "tg://proxy?server=1.2.3.4&port=443&secret=ee..."
 
 # Remote URLs (positional or --url flag, repeatable)
-node check.js https://example.com/proxies.txt
-node check.js --url URL1 --url URL2
+check-proxies https://example.com/proxies.txt
+check-proxies --url URL1 --url URL2
 
 # File with source URLs (one per line, # comments ok)
-node check.js --sources urls.txt
+check-proxies --sources urls.txt
 
 # Local proxy file
-node check.js ./my-proxies.txt
+check-proxies ./my-proxies.txt
 
 # Stdin
-cat proxies.txt | node check.js
+cat proxies.txt | check-proxies
 ```
 
 ### ⚙️ Options
@@ -94,23 +112,29 @@ cat proxies.txt | node check.js
 
 ## 🌐 HTTP API Server
 
-Start with **no arguments**:
+Start with **no arguments** — works both globally and locally:
 
 ```bash
+# Global
+TG_API_ID=12345 TG_API_HASH=abcdef \
+CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret \
+check-proxies
+
+# Local
 TG_API_ID=12345 TG_API_HASH=abcdef \
 CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret \
 node check.js
 ```
 
 ```
-[mtproto-checker] ⚡ HTTP server listening on http://localhost:3080
+[mtproto-checker] ⚡ HTTP server listening on http://localhost:8080
 [mtproto-checker]   POST /check (Basic auth: admin:***)
 ```
 
 ### `POST /check`
 
 ```bash
-curl -u admin:secret http://localhost:3080/check \
+curl -u admin:secret http://localhost:8080/check \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/proxies.txt", "iterations": 2, "concurrency": 20}'
 ```
@@ -119,21 +143,39 @@ curl -u admin:secret http://localhost:3080/check \
 
 | Field | Type | Default | Description |
 |-------|------|:-------:|-------------|
-| `url` | string | — | Proxy list URL or single `tg://proxy` link |
+| `url` / `urls` / `uri` / `uris` | string \| string[] | — | Proxy link(s), list URL(s), or any mix |
 | `iterations` | int | `1` | Check rounds |
 | `concurrency` | int | `30` | Parallel checks |
+
+All input formats work:
+
+```json
+// Single proxy link
+{ "url": "tg://proxy?server=1.2.3.4&port=443&secret=ee..." }
+
+// Single list URL
+{ "url": "https://example.com/proxies.txt" }
+
+// Array — mix of direct links and list URLs
+{ "urls": [
+    "tg://proxy?server=1.2.3.4&port=443&secret=ee...",
+    "https://t.me/proxy?server=5.6.7.8&port=443&secret=dd...",
+    "https://example.com/list.txt"
+  ]
+}
+```
 
 **Response:**
 
 ```json
 {
-  "url": "https://example.com/proxies.txt",
+  "uris": ["https://example.com/proxies.txt"],
   "iterations": 2,
   "concurrency": 20,
   "count": 150,
   "working": 42,
   "results": [
-    { "server": "1.2.3.4", "port": 443, "sni": "example.com", "ok": true, "ms": 312, "error": null, "link": "tg://proxy?..." }
+    { "proxy": { "raw": "tg://proxy?...", "server": "1.2.3.4", "port": 443, "secret": "ee...", "sni": "example.com" }, "ok": true, "ms": 312, "error": null }
   ]
 }
 ```
@@ -164,32 +206,31 @@ const results = await checkProxyLink(
 
 ### `checkProxiesFromURIs(uris, opts)` → `Promise<Array>`
 
-Check proxies from remote URLs, local files, or both. Auto-detects type per entry.
+Check proxies from remote URLs, local files, direct proxy links, or any mix. Auto-detects type per entry, de-duplicates automatically.
 
 ```js
-// Remote
-const results = await checkProxiesFromURIs(
-  'https://example.com/proxies.txt',
-  { apiId: 12345, apiHash: 'abcdef' }
-)
+// Single source
+await checkProxiesFromURIs('https://example.com/proxies.txt', opts)
 
-// Local
-const results = await checkProxiesFromURIs('./proxies.txt', opts)
+// Direct proxy link
+await checkProxiesFromURIs('tg://proxy?server=1.2.3.4&port=443&secret=ee...', opts)
 
-// Mix
-const results = await checkProxiesFromURIs([
-  'https://example.com/list1.txt',
-  './local-list.txt',
-  'https://example.com/list2.txt'
+// Mix of everything
+await checkProxiesFromURIs([
+  'tg://proxy?server=1.2.3.4&port=443&secret=ee...',
+  'https://t.me/proxy?server=5.6.7.8&port=443&secret=dd...',
+  'https://example.com/list.txt',
+  './local-list.txt'
 ], { apiId: 12345, apiHash: 'abcdef', iterations: 2, concurrency: 20 })
 ```
 
 ```
-[mtproto-checker] Loading 3 source(s)...
-  ↓ https://example.com/list1.txt
+[mtproto-checker] Loading 4 source(s)...
+  ⚡ 1.2.3.4:443
+  ⚡ 5.6.7.8:443
+  ↓ https://example.com/list.txt
   ◈ ./local-list.txt
-  ↓ https://example.com/list2.txt
-[mtproto-checker] Checking 150 proxies (dc=2, timeout=10s, concurrency=30, iterations=2)...
+[mtproto-checker] Checking 150 proxies (dc=2, timeout=10s, concurrency=20, iterations=2)...
 
   [  1/150] ✓   312ms  1.2.3.4:443 [example.com]
   [  2/150] ✗ Timeout  5.6.7.8:443

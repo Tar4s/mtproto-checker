@@ -345,7 +345,15 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
+        
+        # Объявляем переменную с таймаутом (600s = 10 минут)
+        set $custom_timeout 600s;
+
+        # Используем переменную для всех таймаутов
+        proxy_read_timeout          $custom_timeout;
+        proxy_connect_timeout       $custom_timeout;
+        proxy_send_timeout          $custom_timeout;
+        send_timeout                $custom_timeout;
     }
 }
 

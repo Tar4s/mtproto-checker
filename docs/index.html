@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en" style="scroll-behavior: smooth;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mtproto-checker — Telegram MTProto Proxy Health Checker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #fafbfc;
+            --surface: #ffffff;
+            --text: #1a1a2e;
+            --text-secondary: #5a6078;
+            --accent: #2563eb;
+            --accent-light: #eff6ff;
+            --border: #e5e7eb;
+            --code-bg: #f3f4f6;
+            --success: #10b981;
+            --radius: 12px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.04);
+            --gradient-hero: linear-gradient(135deg, #eff6ff 0%, #faf5ff 50%, #f0fdf4 100%);
+            --gradient-accent: linear-gradient(135deg, #2563eb, #7c3aed);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-16px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+
+        .animate-in {
+            opacity: 0;
+            animation: fadeInUp 0.6s ease forwards;
+        }
+
+        .animate-in:nth-child(1) { animation-delay: 0s; }
+        .animate-in:nth-child(2) { animation-delay: 0.1s; }
+        .animate-in:nth-child(3) { animation-delay: 0.2s; }
+        .animate-in:nth-child(4) { animation-delay: 0.3s; }
+        .animate-in:nth-child(5) { animation-delay: 0.4s; }
+        .animate-in:nth-child(6) { animation-delay: 0.5s; }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Nav */
+        nav {
+            position: sticky;
+            top: 0;
+            background: rgba(250, 251, 252, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+            padding: 16px 0;
+        }
+
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        nav .logo {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        nav .links {
+            display: flex;
+            gap: 24px;
+        }
+
+        nav .links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+            position: relative;
+        }
+
+        nav .links a::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: var(--gradient-accent);
+            border-radius: 1px;
+            transition: width 0.3s ease;
+        }
+
+        nav .links a:hover { color: var(--accent); }
+        nav .links a:hover::after { width: 100%; }
+
+        /* Hero */
+        .hero {
+            padding: 80px 0 60px;
+            text-align: center;
+            background: var(--gradient-hero);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 50%, rgba(37, 99, 235, 0.04) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(124, 58, 237, 0.03) 0%, transparent 40%);
+            animation: float 8s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .hero .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            background: var(--accent-light);
+            color: var(--accent);
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            animation: fadeIn 0.6s ease forwards;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 16px;
+            line-height: 1.1;
+            background: var(--gradient-accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: fadeInUp 0.7s ease forwards;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 32px;
+            animation: fadeInUp 0.7s ease 0.1s forwards;
+            opacity: 0;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeInUp 0.7s ease 0.2s forwards;
+            opacity: 0;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--gradient-accent);
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .btn-primary:hover::after { opacity: 1; }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25);
+        }
+
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Install block */
+        .install-block {
+            background: var(--text);
+            color: #e5e7eb;
+            border-radius: var(--radius);
+            padding: 16px 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            max-width: 480px;
+            margin: 32px auto 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            animation: fadeInUp 0.7s ease 0.3s forwards;
+            opacity: 0;
+            transition: box-shadow 0.3s, transform 0.3s;
+        }
+
+        .install-block:hover {
+            box-shadow: 0 8px 32px rgba(26, 26, 46, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .install-block code { color: #a5b4fc; }
+        .install-block .dollar { color: #6b7280; margin-right: 8px; }
+
+        /* Features */
+        .features {
+            padding: 60px 0;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            transition: box-shadow 0.3s, transform 0.3s, border-color 0.3s;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .feature-card:hover {
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.08);
+            transform: translateY(-4px);
+            border-color: rgba(37, 99, 235, 0.2);
+        }
+
+        .feature-card .icon {
+            font-size: 28px;
+            margin-bottom: 12px;
+            display: inline-block;
+            transition: transform 0.3s;
+        }
+
+        .feature-card:hover .icon {
+            transform: scale(1.15);
+            animation: float 2s ease-in-out infinite;
+        }
+
+        .feature-card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .feature-card p {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Sections */
+        section {
+            padding: 60px 0;
+        }
+
+        section h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+            background: var(--gradient-accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            display: inline-block;
+        }
+
+        section .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            font-size: 16px;
+        }
+
+        /* Code blocks */
+        pre {
+            background: var(--text);
+            color: #e5e7eb;
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            margin: 16px 0;
+        }
+
+        pre .comment { color: #6b7280; }
+        pre .string { color: #a5b4fc; }
+        pre .keyword { color: #67e8f9; }
+        pre .function { color: #fbbf24; }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        /* API Reference */
+        .api-method {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            margin-bottom: 20px;
+            transition: box-shadow 0.3s, transform 0.3s, border-color 0.3s;
+        }
+
+        .api-method:hover {
+            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.06);
+            transform: translateY(-2px);
+            border-color: rgba(37, 99, 235, 0.15);
+        }
+
+        .api-method h3 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--accent);
+        }
+
+        .api-method p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            margin: 16px 0;
+        }
+
+        th {
+            text-align: left;
+            font-weight: 600;
+            padding: 10px 12px;
+            border-bottom: 2px solid var(--border);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td code {
+            font-size: 12px;
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid transparent;
+            border-image: var(--gradient-accent) 1;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .hero h1 { font-size: 32px; }
+            .hero p { font-size: 16px; }
+            .features-grid { grid-template-columns: 1fr; }
+            nav .links { gap: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="container">
+        <a href="#" class="logo">🔍 mtproto-checker</a>
+        <div class="links">
+            <a href="#features">Features</a>
+            <a href="#api">API</a>
+            <a href="#cli">CLI</a>
+            <a href="https://github.com/Tar4s/mtproto-checker">GitHub</a>
+        </div>
+    </div>
+</nav>
+
+<section class="hero">
+    <div class="container">
+        <span class="badge">Powered by TDLib</span>
+        <h1>MTProto Proxy<br>Health Checker</h1>
+        <p>Real MTProto handshake verification — not just a port scan. If it says&nbsp;✅, the proxy actually works in Telegram.</p>
+        <div class="hero-actions">
+            <a href="https://github.com/Tar4s/mtproto-checker" class="btn btn-primary">
+                View on GitHub
+            </a>
+            <a href="#api" class="btn btn-secondary">
+                API Reference
+            </a>
+        </div>
+        <div class="install-block">
+            <span><span class="dollar">$</span> npm install -g <code>mtproto-checker</code></span>
+        </div>
+    </div>
+</section>
+
+<section class="features" id="features">
+    <div class="container">
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="icon">🤝</div>
+                <h3>Real Handshake</h3>
+                <p>Uses TDLib's <code>testProxy</code> — the same path tdesktop uses. Not a TCP ping.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📡</div>
+                <h3>Flexible Input</h3>
+                <p>Direct links, remote URLs, local files, or any mix — auto-detected per entry.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔄</div>
+                <h3>Multi-Iteration</h3>
+                <p>Re-check survivors across multiple rounds. Only stable proxies make the cut.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌐</div>
+                <h3>HTTP API</h3>
+                <p>Built-in server with Basic Auth. Deploy anywhere, query from anything.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🧹</div>
+                <h3>De-duplication</h3>
+                <p>Auto de-duplicates by <code>server:port:secret</code> across all sources.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔐</div>
+                <h3>Fake-TLS SNI</h3>
+                <p>Extracts camouflage domains from <code>ee</code>-prefixed secrets automatically.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="cli">
+    <div class="container">
+        <h2>CLI Usage</h2>
+        <p class="subtitle">Install globally and run from anywhere</p>
+        <pre><code><span class="comment"># Check proxies from remote URLs</span>
+TG_API_ID=12345 TG_API_HASH=abcdef check-proxies \
+  --url https://example.com/proxies.txt \
+  --iterations 2
+
+<span class="comment"># Check a single proxy link</span>
+check-proxies --proxy <span class="string">"tg://proxy?server=1.2.3.4&port=443&secret=ee..."</span>
+
+<span class="comment"># Start HTTP server (no arguments)</span>
+CHECK_AUTH_USER=admin CHECK_AUTH_PASSWORD=secret check-proxies</code></pre>
+
+        <table>
+            <thead>
+                <tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>--proxy &lt;link&gt;</code></td><td>—</td><td>Check one proxy link directly</td></tr>
+                <tr><td><code>--url &lt;url&gt;</code></td><td>—</td><td>Source URL (repeatable)</td></tr>
+                <tr><td><code>--sources &lt;file&gt;</code></td><td>—</td><td>File of source URLs</td></tr>
+                <tr><td><code>--dc &lt;1-5&gt;</code></td><td>2</td><td>Data center for testProxy</td></tr>
+                <tr><td><code>--timeout &lt;sec&gt;</code></td><td>10</td><td>Per-proxy timeout</td></tr>
+                <tr><td><code>--concurrency &lt;n&gt;</code></td><td>30</td><td>Parallel checks</td></tr>
+                <tr><td><code>--iterations &lt;n&gt;</code></td><td>1</td><td>Re-check rounds</td></tr>
+                <tr><td><code>--out &lt;prefix&gt;</code></td><td>result</td><td>Output file prefix</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="api">
+    <div class="container">
+        <h2>Library API</h2>
+        <p class="subtitle">Three functions, that's all you need</p>
+
+        <pre><code><span class="keyword">const</span> { checkProxyLink, checkProxiesFromURIs, startServer } = <span class="function">require</span>(<span class="string">'mtproto-checker'</span>)</code></pre>
+
+        <div class="api-method">
+            <h3>checkProxyLink(link, opts)</h3>
+            <p>Check a single <code>tg://proxy</code> or <code>https://t.me/proxy</code> link via real MTProto handshake.</p>
+            <pre><code><span class="keyword">const</span> results = <span class="keyword">await</span> <span class="function">checkProxyLink</span>(
+  <span class="string">'tg://proxy?server=1.2.3.4&port=443&secret=ee...'</span>,
+  { apiId: 12345, apiHash: <span class="string">'abcdef'</span> }
+)</code></pre>
+        </div>
+
+        <div class="api-method">
+            <h3>checkProxiesFromURIs(uris, opts)</h3>
+            <p>Check proxies from remote URLs, local files, direct links, or any mix. Auto-detects and de-duplicates.</p>
+            <pre><code><span class="keyword">const</span> results = <span class="keyword">await</span> <span class="function">checkProxiesFromURIs</span>([
+  <span class="string">'tg://proxy?server=1.2.3.4&port=443&secret=ee...'</span>,
+  <span class="string">'https://example.com/list.txt'</span>,
+  <span class="string">'./local-proxies.txt'</span>
+], { apiId: 12345, apiHash: <span class="string">'abcdef'</span>, iterations: 2, concurrency: 20 })</code></pre>
+        </div>
+
+        <div class="api-method">
+            <h3>startServer(opts)</h3>
+            <p>Start the HTTP API server programmatically. All fields optional — falls back to env vars.</p>
+            <pre><code><span class="keyword">const</span> server = <span class="keyword">await</span> <span class="function">startServer</span>({
+  apiId: 12345,
+  apiHash: <span class="string">'abcdef'</span>,
+  user: <span class="string">'admin'</span>,
+  password: <span class="string">'secret'</span>,
+  port: 8080
+})</code></pre>
+        </div>
+
+        <h3 style="margin-top: 32px; margin-bottom: 16px;">Options Reference</h3>
+        <table>
+            <thead>
+                <tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>apiId</code></td><td>number</td><td>—</td><td>Telegram API ID</td></tr>
+                <tr><td><code>apiHash</code></td><td>string</td><td>—</td><td>Telegram API Hash</td></tr>
+                <tr><td><code>dc</code></td><td>number</td><td>2</td><td>Data center (1–5)</td></tr>
+                <tr><td><code>timeout</code></td><td>number</td><td>10</td><td>Timeout in seconds</td></tr>
+                <tr><td><code>concurrency</code></td><td>number</td><td>30</td><td>Parallel checks</td></tr>
+                <tr><td><code>iterations</code></td><td>number</td><td>1</td><td>Check rounds</td></tr>
+                <tr><td><code>onProgress</code></td><td>function</td><td>—</td><td><code>(proxy, res, i, total) => void</code></td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="http-api">
+    <div class="container">
+        <h2>HTTP API</h2>
+        <p class="subtitle">POST /check — accepts any mix of proxy links and list URLs</p>
+
+        <pre><code><span class="comment"># Single proxy link</span>
+curl -u admin:secret https://your-server/check \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{"url": "tg://proxy?server=1.2.3.4&port=443&secret=ee..."}'</span>
+
+<span class="comment"># Multiple sources</span>
+curl -u admin:secret https://your-server/check \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{"urls": ["https://example.com/list.txt", "tg://proxy?..."], "iterations": 2}'</span></code></pre>
+
+        <div class="api-method">
+            <h3>Request Body</h3>
+            <table>
+                <thead>
+                    <tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>url</code> / <code>urls</code> / <code>uri</code> / <code>uris</code></td><td>string | string[]</td><td>—</td><td>Proxy link(s), list URL(s), or mix</td></tr>
+                    <tr><td><code>iterations</code></td><td>int</td><td>1</td><td>Check rounds</td></tr>
+                    <tr><td><code>concurrency</code></td><td>int</td><td>30</td><td>Parallel checks</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="api-method">
+            <h3>Response</h3>
+            <pre><code>{
+  <span class="string">"uris"</span>: [<span class="string">"https://example.com/proxies.txt"</span>],
+  <span class="string">"iterations"</span>: 2,
+  <span class="string">"concurrency"</span>: 20,
+  <span class="string">"count"</span>: 150,
+  <span class="string">"working"</span>: 42,
+  <span class="string">"results"</span>: [
+    {
+      <span class="string">"proxy"</span>: { <span class="string">"server"</span>: <span class="string">"1.2.3.4"</span>, <span class="string">"port"</span>: 443, <span class="string">"sni"</span>: <span class="string">"example.com"</span> },
+      <span class="string">"ok"</span>: <span class="keyword">true</span>,
+      <span class="string">"ms"</span>: 312,
+      <span class="string">"error"</span>: <span class="keyword">null</span>
+    }
+  ]
+}</code></pre>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <p>Made by <a href="https://github.com/Tar4s">Tar4s</a> &middot; ISC License &middot; <a href="https://github.com/Tar4s/mtproto-checker">Source on GitHub</a></p>
+    </div>
+</footer>
+
+<script>
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry, i) => {
+            if (entry.isIntersecting) {
+                entry.target.style.animation = `fadeInUp 0.5s ease ${i * 0.08}s forwards`;
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.feature-card, .api-method').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

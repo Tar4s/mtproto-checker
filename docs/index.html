@@ -8,20 +8,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #fafbfc;
+            --bg: #f7f9fb;
             --surface: #ffffff;
-            --text: #1a1a2e;
-            --text-secondary: #5a6078;
-            --accent: #2563eb;
-            --accent-light: #eff6ff;
-            --border: #e5e7eb;
-            --code-bg: #f3f4f6;
-            --success: #10b981;
+            --text: #0e1621;
+            --text-secondary: #6b7f8e;
+            --accent: #2AABEE;
+            --accent-dark: #229ED9;
+            --accent-light: #e8f6fd;
+            --border: #e1e8ed;
+            --code-bg: #f0f4f8;
+            --success: #4fae4e;
             --radius: 12px;
-            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.04);
-            --gradient-hero: linear-gradient(135deg, #eff6ff 0%, #faf5ff 50%, #f0fdf4 100%);
-            --gradient-accent: linear-gradient(135deg, #2563eb, #7c3aed);
+            --shadow: 0 1px 3px rgba(14,22,33,0.06), 0 1px 2px rgba(14,22,33,0.04);
+            --shadow-lg: 0 10px 15px -3px rgba(42,171,238,0.1), 0 4px 6px -4px rgba(14,22,33,0.06);
+            --gradient-hero: linear-gradient(135deg, #e8f6fd 0%, #f0f8ff 40%, #f7f9fb 100%);
+            --gradient-accent: linear-gradient(135deg, #2AABEE, #229ED9);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -150,8 +151,8 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background: radial-gradient(circle at 30% 50%, rgba(37, 99, 235, 0.04) 0%, transparent 50%),
-                        radial-gradient(circle at 70% 80%, rgba(124, 58, 237, 0.03) 0%, transparent 40%);
+            background: radial-gradient(circle at 30% 50%, rgba(42, 171, 238, 0.07) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(34, 158, 217, 0.05) 0%, transparent 40%);
             animation: float 8s ease-in-out infinite;
             pointer-events: none;
         }
@@ -231,7 +232,7 @@
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25);
+            box-shadow: 0 8px 24px rgba(42, 171, 238, 0.35);
         }
 
         .btn-secondary {
@@ -268,7 +269,7 @@
             transform: translateY(-2px);
         }
 
-        .install-block code { color: #a5b4fc; }
+        .install-block code { color: #7dd3fc; }
         .install-block .dollar { color: #6b7280; margin-right: 8px; }
 
         /* Features */
@@ -287,15 +288,17 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             padding: 24px;
+            position: relative;
+            overflow: hidden;
             transition: box-shadow 0.3s, transform 0.3s, border-color 0.3s;
             opacity: 0;
             transform: translateY(20px);
         }
 
         .feature-card:hover {
-            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.08);
+            box-shadow: 0 12px 24px rgba(42, 171, 238, 0.08);
             transform: translateY(-4px);
-            border-color: rgba(37, 99, 235, 0.2);
+            border-color: rgba(42, 171, 238, 0.2);
         }
 
         .feature-card .icon {
@@ -309,6 +312,21 @@
             transform: scale(1.15);
             animation: float 2s ease-in-out infinite;
         }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: 20px;
+            width: 32px;
+            height: 3px;
+            background: var(--gradient-accent);
+            border-radius: 0 0 3px 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feature-card:hover::before { opacity: 1; }
 
         .feature-card h3 {
             font-size: 16px;
@@ -357,10 +375,10 @@
             margin: 16px 0;
         }
 
-        pre .comment { color: #6b7280; }
-        pre .string { color: #a5b4fc; }
-        pre .keyword { color: #67e8f9; }
-        pre .function { color: #fbbf24; }
+        pre .comment { color: #6b7f8e; }
+        pre .string { color: #7dd3fc; }
+        pre .keyword { color: #2AABEE; }
+        pre .function { color: #4fae4e; }
 
         code {
             font-family: 'JetBrains Mono', monospace;
@@ -386,9 +404,9 @@
         }
 
         .api-method:hover {
-            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.06);
+            box-shadow: 0 8px 24px rgba(42, 171, 238, 0.06);
             transform: translateY(-2px);
-            border-color: rgba(37, 99, 235, 0.15);
+            border-color: rgba(42, 171, 238, 0.15);
         }
 
         .api-method h3 {
@@ -446,7 +464,10 @@
         footer a {
             color: var(--accent);
             text-decoration: none;
+            transition: color 0.2s;
         }
+
+        footer a:hover { color: var(--accent-dark); }
 
         /* Responsive */
         @media (max-width: 640px) {
@@ -461,11 +482,12 @@
 
 <nav>
     <div class="container">
-        <a href="#" class="logo">🔍 mtproto-checker</a>
+        <a href="#" class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.67-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.41-.88.03-.24.37-.49 1.02-.75 3.98-1.73 6.64-2.88 7.97-3.44 3.8-1.58 4.59-1.86 5.1-1.87.11 0 .37.03.54.17.14.12.18.28.2.45-.01.06.01.24 0 .37z" fill="#2AABEE"/></svg> mtproto-checker</a>
         <div class="links">
             <a href="#features">Features</a>
             <a href="#api">API</a>
             <a href="#cli">CLI</a>
+            <a href="#deploy">Deploy</a>
             <a href="https://github.com/Tar4s/mtproto-checker">GitHub</a>
         </div>
     </div>
@@ -662,6 +684,129 @@ curl -u admin:secret https://your-server/check \
     }
   ]
 }</code></pre>
+        </div>
+    </div>
+</section>
+
+<section id="deploy">
+    <div class="container">
+        <h2>Docker Deployment</h2>
+        <p class="subtitle">SSL-terminated reverse proxy with automated CI/CD</p>
+
+        <div class="api-method">
+            <h3>Server structure</h3>
+            <pre><code>/etc/mtproto-checker/          <span class="comment"># source code (auto-pulled)</span>
+├── check.js
+├── Dockerfile
+├── package.json
+└── ...
+
+/opt/mtproto-checker/          <span class="comment"># configs & certs (manual)</span>
+├── docker-compose.yml
+├── default.conf
+├── fullchain.pem
+└── privkey.key</code></pre>
+        </div>
+
+        <div class="api-method">
+            <h3>docker-compose.yml</h3>
+            <pre><code><span class="keyword">services</span>:
+  <span class="function">app</span>:
+    container_name: mtproto-checker
+    build: /etc/mtproto-checker
+    restart: unless-stopped
+    environment:
+      - TG_API_ID=<span class="string">your_api_id</span>
+      - TG_API_HASH=<span class="string">your_api_hash</span>
+      - CHECK_AUTH_USER=<span class="string">admin</span>
+      - CHECK_AUTH_PASSWORD=<span class="string">your_password</span>
+      - PORT=8080
+    expose:
+      - <span class="string">"8080"</span>
+
+  <span class="function">nginx</span>:
+    container_name: mtproto-checker-nginx
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - <span class="string">"443:443"</span>
+      - <span class="string">"80:80"</span>
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./privkey.key:/etc/nginx/ssl/privkey.key:ro
+      - ./fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+    depends_on:
+      - app</code></pre>
+        </div>
+
+        <div class="api-method">
+            <h3>default.conf (nginx)</h3>
+            <pre><code><span class="keyword">server</span> {
+    listen <span class="string">443</span> ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    <span class="keyword">location</span> / {
+        proxy_pass http://app:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 600s;
+    }
+}
+
+<span class="keyword">server</span> {
+    listen <span class="string">80</span>;
+    server_name _;
+    return 301 https://$host$request_uri;
+}</code></pre>
+        </div>
+
+        <div class="api-method">
+            <h3>SSL certificate (Let's Encrypt)</h3>
+            <pre><code><span class="comment"># Install acme.sh</span>
+sudo apt-get install cron socat
+curl https://get.acme.sh | sh -s email=<span class="string">your@email.com</span> && source ~/.bashrc
+acme.sh --set-default-ca --server letsencrypt
+
+<span class="comment"># Issue certificate</span>
+acme.sh --issue --standalone -d <span class="string">'your-domain.example.com'</span> \
+  --key-file /opt/mtproto-checker/privkey.key \
+  --fullchain-file /opt/mtproto-checker/fullchain.pem
+
+<span class="comment"># Auto-renewal via cron — verify:</span>
+crontab -l | grep acme</code></pre>
+        </div>
+
+        <div class="api-method">
+            <h3>SSH key for CI/CD</h3>
+            <p>Generate a deploy key on the server, then add the private key as a GitHub Secret.</p>
+            <pre><code><span class="comment"># On the server</span>
+ssh-keygen -t ed25519 -C <span class="string">"github-actions"</span> -f ~/.ssh/github-actions -N <span class="string">""</span>
+cat ~/.ssh/github-actions.pub >> ~/.ssh/authorized_keys
+cat ~/.ssh/github-actions   <span class="comment"># copy this → SSH_PRIVATE_KEY secret</span></code></pre>
+            <table>
+                <thead>
+                    <tr><th>GitHub Secret</th><th>Value</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>SERVER_HOST</code></td><td>Server IP or domain</td></tr>
+                    <tr><td><code>SERVER_USER</code></td><td>SSH username (e.g. <code>root</code>)</td></tr>
+                    <tr><td><code>SSH_PRIVATE_KEY</code></td><td>Content of <code>~/.ssh/github-actions</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="api-method">
+            <h3>Deploy</h3>
+            <p>Trigger manually: GitHub &rarr; Actions &rarr; Deploy &rarr; "Run workflow"</p>
+            <pre><code><span class="comment"># Or deploy manually on the server:</span>
+cd /opt/mtproto-checker
+docker compose build --no-cache
+docker compose up -d</code></pre>
         </div>
     </div>
 </section>

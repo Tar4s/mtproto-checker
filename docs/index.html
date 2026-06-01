@@ -451,6 +451,113 @@
             font-size: 12px;
         }
 
+        /* Showcase */
+        .showcase-card {
+            display: block;
+            text-decoration: none;
+            color: var(--text);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            max-width: 560px;
+            margin: 0 auto;
+            transition: box-shadow 0.3s, transform 0.3s, border-color 0.3s;
+        }
+
+        .showcase-card:hover {
+            box-shadow: 0 16px 40px rgba(42, 171, 238, 0.12);
+            transform: translateY(-4px);
+            border-color: rgba(42, 171, 238, 0.3);
+        }
+
+        .showcase-browser {
+            background: #f0f4f8;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .showcase-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .showcase-dots span {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .showcase-url {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .showcase-body {
+            padding: 20px 24px;
+        }
+
+        .showcase-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .showcase-badge {
+            background: #e8fae8;
+            color: #2d8a2d;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 12px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .showcase-proxies {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .showcase-proxy {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: #f7faf7;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .showcase-proxy-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .showcase-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .showcase-dot.green {
+            background: var(--success);
+            box-shadow: 0 0 6px rgba(79, 174, 78, 0.4);
+        }
+
+        .showcase-ms {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--success);
+            font-weight: 500;
+        }
+
         /* Footer */
         footer {
             padding: 40px 0;
@@ -487,6 +594,7 @@
             <a href="#features">Features</a>
             <a href="#api">API</a>
             <a href="#cli">CLI</a>
+            <a href="#showcase">Showcase</a>
             <a href="#deploy">Deploy</a>
             <a href="https://github.com/Tar4s/mtproto-checker">GitHub</a>
         </div>
@@ -688,6 +796,57 @@ curl -u admin:secret https://your-server/check \
     </div>
 </section>
 
+<section id="showcase">
+    <div class="container">
+        <h2>In production</h2>
+        <p class="subtitle">Real-world example — proxy panel powered by mtproto-checker</p>
+
+        <a href="https://core-panel.fvds.ru/app/proxies" target="_blank" rel="noopener" class="showcase-card">
+            <div class="showcase-browser">
+                <div class="showcase-dots">
+                    <span style="background:#ff5f57"></span>
+                    <span style="background:#febc2e"></span>
+                    <span style="background:#28c840"></span>
+                </div>
+                <span class="showcase-url">core-panel.fvds.ru/app/proxies</span>
+            </div>
+            <div class="showcase-body">
+                <div class="showcase-header">
+                    <div>
+                        <div style="font-size:20px; font-weight:600; margin-bottom:4px">Proxy panel</div>
+                        <div style="font-size:13px; color:var(--text-secondary)">36 stable connections &middot; auto-updated</div>
+                    </div>
+                    <div class="showcase-badge">Live</div>
+                </div>
+                <div class="showcase-proxies">
+                    <div class="showcase-proxy">
+                        <div class="showcase-proxy-info">
+                            <span class="showcase-dot green"></span>
+                            <span style="font-weight:500">135.181.64.41</span>
+                        </div>
+                        <span class="showcase-ms">5394 ms</span>
+                    </div>
+                    <div class="showcase-proxy">
+                        <div class="showcase-proxy-info">
+                            <span class="showcase-dot green"></span>
+                            <span style="font-weight:500">mt.corph.ru</span>
+                        </div>
+                        <span class="showcase-ms">8206 ms</span>
+                    </div>
+                    <div class="showcase-proxy">
+                        <div class="showcase-proxy-info">
+                            <span class="showcase-dot green"></span>
+                            <span style="font-weight:500">3.telbet.lol</span>
+                        </div>
+                        <span class="showcase-ms">8208 ms</span>
+                    </div>
+                </div>
+                <div style="font-size:12px; color:var(--text-secondary); text-align:center; margin-top:12px">Click to visit &rarr;</div>
+            </div>
+        </a>
+    </div>
+</section>
+
 <section id="deploy">
     <div class="container">
         <h2>Docker Deployment</h2>
@@ -827,7 +986,7 @@ docker compose up -d</code></pre>
         });
     }, { threshold: 0.1 });
 
-    document.querySelectorAll('.feature-card, .api-method').forEach(el => observer.observe(el));
+    document.querySelectorAll('.feature-card, .api-method, .showcase-card').forEach(el => observer.observe(el));
 </script>
 </body>
 </html>

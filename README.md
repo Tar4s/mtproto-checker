@@ -402,4 +402,4 @@ docker compose up -d
 
 ## 📜 License
 
-ISC
+[Unlicense](LICENSE) — completely free to use, no restrictions.

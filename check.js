@@ -641,6 +641,12 @@ function createServer({ auth, checkUrl, logger = console.error }) {
     let statusCode = 500
 
     try {
+      if (req.url === '/health') {
+        statusCode = 200
+        jsonResponse(res, statusCode, { status: 'ok', uptime: process.uptime() })
+        return
+      }
+
       if (!isAuthorized(req, auth)) {
         statusCode = 401
         jsonResponse(res, statusCode, { error: 'Unauthorized' }, { 'www-authenticate': realm })
@@ -751,7 +757,20 @@ async function startServer(opts = {}) {
   })
 
   console.error(`[mtproto-checker] ⚡ HTTP server listening on http://localhost:${port}`)
-  console.error(`[mtproto-checker]   POST /check (Basic auth: ${user}:***)`)
+  console.error(`[mtproto-checker]   GET  /health (no auth)`)
+  console.error(`[mtproto-checker]   POST /check  (Basic auth: ${user}:***)`)
+
+  const shutdown = signal => {
+    console.error(`\n[mtproto-checker] ${signal} received, shutting down...`)
+    server.close(() => {
+      console.error('[mtproto-checker] Server closed.')
+      process.exit(0)
+    })
+    setTimeout(() => { process.exit(1) }, 5000)
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT', () => shutdown('SIGINT'))
+
   return server
 }
 

@@ -1,0 +1,14 @@
+node_modules
+.git
+.github
+docs
+test
+.gitignore
+.dockerignore
+.npmrc
+.nvmrc
+*.md
+LICENSE
+SECURITY.md
+.proxy-checker-td
+result*

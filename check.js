@@ -333,7 +333,8 @@ async function checkProxies(proxies, opts) {
   const dc = opts.dc ?? 2
   const timeout = opts.timeout ?? 10
   const concurrency = opts.concurrency ?? 30
-  const tdlibDir = opts.tdlibDir ?? '.proxy-checker-td'
+  const tdlibBase = opts.tdlibDir ?? '.proxy-checker-td'
+  const tdlibDir = `${tdlibBase}-${crypto.randomUUID()}`
   const databaseDirectory = path.join(tdlibDir, 'db')
   const filesDirectory = path.join(tdlibDir, 'files')
 

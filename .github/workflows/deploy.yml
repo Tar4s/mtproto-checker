@@ -25,6 +25,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: APP_ENV,APP_SOURCES
           script: |
             set -e
 
@@ -39,7 +40,7 @@ jobs:
 
             # Rebuild and restart (compose file is in /opt, build context is /etc)
             cd /etc/mtproto-checker/docker
-            cat "$APP_ENV" >> .env
-            cat "$APP_SOURCES" >> sources.txt
+            printf '%s\n' "$APP_ENV"     > .env
+            printf '%s\n' "$APP_SOURCES" > sources.txt
             docker compose build --no-cache
             docker compose up -d --force-recreate

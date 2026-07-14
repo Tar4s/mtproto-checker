@@ -1,6 +1,6 @@
 {
   "name": "mtproto-checker",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "Check Telegram MTProto proxies via a real TDLib handshake (testProxy), like tdesktop does",
   "main": "check.js",
   "exports": {
@@ -19,11 +19,16 @@
   },
   "files": [
     "check.js",
+    "pool.js",
+    "web/index.html",
     "README.md",
     "urls.txt"
   ],
   "scripts": {
-    "start": "node check.js"
+    "start": "node check.js",
+    "serve": "node check.js serve",
+    "pool": "node check.js pool",
+    "dev:pool": "node --env-file=.env check.js pool --sources sources.txt --iterations 5 --interval 4 --concurrency 20"
   },
   "license": "Unlicense",
   "engines": {

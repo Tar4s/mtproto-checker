@@ -182,6 +182,90 @@ All input formats work:
 
 **Error codes:** `400` bad request · `401` unauthorized · `404` wrong endpoint · `405` wrong method · `502` upstream fetch failed
 
+## 🛰 Unified Service (`serve` / `pool`)
+
+One HTTP server, one port, two ways to check proxies — run it as an autonomous service:
+
+- **On-demand** — `POST /check` checks any link(s)/list URL(s) you send and returns a full report. (Same contract as the [HTTP API Server](#-http-api-server) above; it's the same server.)
+- **Always-ready pool** — a background loop keeps a **live pool** of working proxies from a sources file, served over non-blocking public `GET` endpoints (reads never block, even mid-check).
+
+```bash
+node check.js serve   # POST /check; pool auto-enabled if sources.txt exists
+node check.js pool    # POST /check + background pool (forced on)
+```
+
+`POST /check` needs `CHECK_AUTH_USER`/`CHECK_AUTH_PASSWORD` (returns `503` if unset). The pool `GET` feed is public by default. Toggle the pool explicitly with `--pool` / `--no-pool`.
+
+### The pool
+
+It loads sources from a nearby file, checks them on a background loop, and serves the survivors over non-blocking `GET` endpoints — reads never block, even while a check round is running.
+
+### Flow
+
+1. **Load** every source from `sources.txt` (remote list URLs, direct proxy links, or local files; `#` comments allowed) into one de-duplicated set, and put the **whole set into the live container immediately** (each entry marked `ok: null` = unchecked). The API can serve it right away.
+2. **`--iterations` re-check rounds** run in the background and prune the container **live**: the moment a check fails, that proxy is dropped; the moment one passes, it flips to `ok: true` (with its latency). So a working proxy shows up in the API instantly, mid-round — no waiting for the round to finish.
+3. Each round only re-checks the current survivors, so the container narrows down to the most stable proxies.
+4. **Sleep** for `--interval` hours, then repeat the whole cycle from the sources (the container is re-seeded with the fresh full set).
+
+`GET /proxies.txt` (and `GET /proxies?working=1`) return only verified-working proxies; `GET /proxies` returns the whole container with each entry's `ok`/`ms`/`error` status so you can see what's still pending. Pass `--clear-on-cycle` to empty the container the moment a new cycle starts (instead of keeping the previous set served until the new one is loaded).
+
+### Start
+
+```bash
+# Prepare sources
+cp sources.example.txt sources.txt   # then edit it
+
+TG_API_ID=12345 TG_API_HASH=abcdef \
+node check.js pool --sources sources.txt --iterations 3 --interval 6
+```
+
+### ⚙️ Pool Options
+
+| Flag | Default | Description |
+|------|:-------:|-------------|
+| `--sources <file>` | `sources.txt` | Source list file |
+| `--iterations <n>` | `3` | Re-check rounds against the container |
+| `--interval <hours>` | `6` | Pause between full cycles |
+| `--dc <1-5>` | `2` | Data center for `testProxy` |
+| `--timeout <sec>` | `10` | Per-proxy timeout |
+| `--concurrency <n>` | `30` | Parallel checks |
+| `--port <n>` | `8080` | HTTP port (or `PORT` env) |
+| `--clear-on-cycle` | off | Empty the container at the start of each cycle |
+| `--pool` / `--no-pool` | auto | Force the background pool on/off (`serve`/bare auto-enable it when `sources.txt` exists) |
+| `--user` / `--password` | env | Basic auth for `POST /check` (fallback: `CHECK_AUTH_USER` / `CHECK_AUTH_PASSWORD`) |
+
+### 🌐 Service Endpoints
+
+| Endpoint | Auth | Response |
+|----------|:----:|----------|
+| `POST /check` | 🔐 Basic | On-demand check of link(s)/list URL(s); full report |
+| `GET /proxies` | — | JSON: cycle metadata + whole container (each entry has `ok`/`ms`/`error`) |
+| `GET /proxies?working=1` | — | JSON: metadata + only verified-working proxies |
+| `GET /proxies.txt` | — | Verified-working proxy links, plain text (one per line) |
+| `GET /status` | — | Cycle/phase metadata only (`containerCount`, `workingCount`, ...) |
+| `GET /health` | — | Liveness probe |
+
+Pool `GET` endpoints are served only when the pool is enabled.
+
+```bash
+curl "http://localhost:8080/proxies.txt"          # working links, ready to use
+curl "http://localhost:8080/proxies?working=1"    # working entries with latency
+curl "http://localhost:8080/status"               # cycle/phase + counts
+curl -u admin:secret http://localhost:8080/check \
+  -H 'Content-Type: application/json' -d '{"url":"https://example.com/list.txt"}'
+```
+
+### 🏃 Quick Local Run
+
+```bash
+cp .env.example .env          # fill in TG_API_ID / TG_API_HASH
+cp sources.example.txt sources.txt   # or use the bundled example directly
+
+npm run dev:pool              # node --env-file=.env, fast params, sources.example.txt
+# or, with your own sources.txt and env already exported:
+npm run pool
+```
+
 ## 📚 Library API
 
 ```js
@@ -278,127 +362,90 @@ Secrets: hex (`ee...`, `dd...`), plain hex, or base64url — auto-detected. `tg:
 
 ## 🐳 Docker Deployment
 
-Structure on the server:
+The service ships as a Docker image (built in CI, pushed to the GitLab registry) and runs behind nginx (TLS termination) via Docker Compose. The container runs the [unified service](#-unified-service-serve--pool) — background pool **and** on-demand `POST /check`.
+
+### Server layout — `/opt/mtproto-checker`
+
+Everything runs from `/opt/mtproto-checker`. CI ships `docker-compose.yml` and `default.conf`; **you** prepare the rest once (CI never touches it):
 
 ```
-/etc/mtproto-checker/          ← source code (auto-pulled)
-├── check.js
-├── Dockerfile
-├── package.json
-└── ...
-
-/opt/mtproto-checker/          ← configs & certs (manual)
-├── docker-compose.yml
-├── default.conf
-├── fullchain.pem
-└── privkey.key
+/opt/mtproto-checker/
+├── docker-compose.yml   ← shipped by CI
+├── default.conf         ← shipped by CI (nginx)
+├── .env                 ← you: secrets & config
+└── ssl/                 ← you: TLS keys
+    ├── privkey.key
+    └── fullchain.pem
 ```
 
-### `docker-compose.yml`
+### `.env`
 
-```yaml
-services:
-  app:
-    container_name: mtproto-checker
-    build: /etc/mtproto-checker
-    restart: unless-stopped
-    environment:
-      - TG_API_ID=your_api_id
-      - TG_API_HASH=your_api_hash
-      - CHECK_AUTH_USER=admin
-      - CHECK_AUTH_PASSWORD=your_password
-      - PORT=8080
-    expose:
-      - "8080"
+Docker Compose auto-loads this for `${VAR}` interpolation. Create it once:
 
-  nginx:
-    container_name: mtproto-checker-nginx
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "443:443"
-      - "80:80"
-    volumes:
-      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./privkey.key:/etc/nginx/ssl/privkey.key:ro
-      - ./fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
-    depends_on:
-      - app
+```ini
+TG_API_ID=12345
+TG_API_HASH=your_api_hash
+CHECK_AUTH_USER=admin
+CHECK_AUTH_PASSWORD=your_password
+PORT=8080
 ```
 
-### `default.conf`
+The image name is pinned in `docker-compose.yml` (`registry.gitlab.com/<group>/mtproto-checker:latest`) — adjust it to your registry path.
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name _;
+### SSL certificate
 
-    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/privkey.key;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass http://app:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Объявляем переменную с таймаутом (600s = 10 минут)
-        set $custom_timeout 600s;
-
-        # Используем переменную для всех таймаутов
-        proxy_read_timeout          $custom_timeout;
-        proxy_connect_timeout       $custom_timeout;
-        proxy_send_timeout          $custom_timeout;
-        send_timeout                $custom_timeout;
-    }
-}
-
-server {
-    listen 80;
-    server_name _;
-    return 301 https://$host$request_uri;
-}
-```
-
-### SSL Certificate
-
-Install acme.sh:
+Issue a cert straight into `ssl/` with [acme.sh](https://github.com/acmesh-official/acme.sh):
 
 ```bash
-sudo apt-get install cron socat
+apt install -y cron socat
 curl https://get.acme.sh | sh -s email=your@email.com && source ~/.bashrc
 acme.sh --set-default-ca --server letsencrypt
+
+acme.sh --issue --standalone -d 'proxy.example.com' \
+  --key-file    /opt/mtproto-checker/ssl/privkey.key \
+  --fullchain-file /opt/mtproto-checker/ssl/fullchain.pem
 ```
 
-Issue certificate:
+Auto-renewal is registered in cron automatically — verify with `crontab -l | grep acme`.
+
+### CI/CD (GitLab)
+
+`.gitlab-ci.yml` has two stages, triggered from a **manual web pipeline** (`Pipelines → Run pipeline`):
+
+1. **build** — `docker build` + `docker push` to `$CI_REGISTRY`.
+2. **deploy** — over SSH: `mkdir -p /opt/mtproto-checker/ssl`, `scp` `docker-compose.yml` + `default.conf`, then `docker compose pull && docker compose up -d --force-recreate`.
+
+Required CI/CD variables (**Settings → CI/CD → Variables**):
+
+| Variable | Purpose |
+|----------|---------|
+| `SERVER_HOST` / `SERVER_USER` | Deploy target (SSH) |
+| `SSH_PRIVATE_KEY` | Key authorized on the server |
+| `CI_REGISTRY` / `CI_REGISTRY_USER` / `CI_REGISTRY_PASSWORD` | Registry auth (predefined on GitLab.com) |
+
+A scheduled pipeline (**CI/CD → Schedules**) can re-run the deploy to pull the freshest image periodically.
+
+### Manual run
+
+On the server, without CI:
 
 ```bash
-acme.sh --issue --standalone -d 'your-domain.example.com' \
-  --key-file /opt/mtproto-checker/privkey.key \
-  --fullchain-file /opt/mtproto-checker/fullchain.pem
-```
-
-Auto-renewal is set up via cron automatically. Verify with `crontab -l | grep acme`.
-
-### Deploy
-
-```bash
-docker compose build --no-cache
+cd /opt/mtproto-checker
+docker login registry.gitlab.com
+docker compose pull
 docker compose up -d
+docker compose logs -f app
 ```
 
-## 🛠 Troubleshooting
+Behind nginx the endpoints are served over HTTPS:
 
-| Problem | Fix |
-|---------|-----|
-| `Set TG_API_ID and TG_API_HASH` | Export both env vars |
-| Noisy latency | Reduce `--concurrency` |
-| Need stable proxies only | Increase `--iterations` |
-| TDLib leftover files | `.proxy-checker-td/` is auto-cleaned after each run |
+```bash
+curl "https://proxy.example.com/proxies.txt"
+curl -u admin:secret https://proxy.example.com/check \
+  -H 'Content-Type: application/json' -d '{"url":"https://example.com/list.txt"}'
+```
+
+> The image bakes `sources.txt` in, so the pool starts immediately. Change sources without rebuilding by mounting your own file — uncomment the `sources.txt` volume in `docker-compose.yml`.
 
 ## 📜 License
 

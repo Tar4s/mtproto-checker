@@ -38,6 +38,8 @@ jobs:
             fi
 
             # Rebuild and restart (compose file is in /opt, build context is /etc)
-            cd /opt/mtproto-checker
+            cd /opt/mtproto-checker/docker
+            cat "$APP_ENV" >> .env
+            cat "$APP_SOURCES" >> sources.txt
             docker compose build --no-cache
             docker compose up -d --force-recreate

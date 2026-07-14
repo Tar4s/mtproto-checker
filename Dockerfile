@@ -5,7 +5,9 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 
-COPY check.js ./
+COPY check.js pool.js ./
+COPY web ./web
+COPY sources.txt ./sources.txt
 
 EXPOSE 8080
 

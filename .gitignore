@@ -1,6 +1,9 @@
 node_modules/
 .vscode/
-.proxy-checker-td/
+.claude/
+.proxy-checker-td*/
 result*
 proxies.txt
+sources.txt
+.env
 test/

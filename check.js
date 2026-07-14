@@ -839,9 +839,34 @@ async function main() {
 }
 
 module.exports = { checkProxyLink, checkProxiesFromURIs, startServer }
-module.exports._internals = { checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, parseArgs, resolveInputProxies, runIterativeChecks, shouldStartServer, parseLink, normalizeSecret, faketlsSni, mergeProxies, loadProxiesFromFile }
+module.exports._internals = { checkProxies, checkProxiesFromUrls, checkProxiesFromURIs, checkRequestUrl, checkSingleUrl, configureTdlibOnce, createServer, fetchText, isAuthorized, jsonResponse, loadProxiesFromUrls, parseArgs, readJsonBody, resolveInputProxies, runIterativeChecks, shouldStartServer, parseLink, normalizeSecret, faketlsSni, mergeProxies, loadProxiesFromFile }
 
-if (require.main === module) (shouldStartServer(process.argv.slice(2)) ? startServer() : main()).catch(err => {
+/**
+ * Pick the entry point from argv:
+ *   - `pool [opts]`  → unified service with the background pool forced on;
+ *   - `serve [opts]` → unified service (pool on only with --pool or a sources file);
+ *   - no args        → unified service (pool auto-enabled if a sources file exists);
+ *   - anything else  → one-shot CLI run.
+ * The unified service always exposes on-demand `POST /check`.
+ * @param {string[]} argv - process.argv.slice(2)
+ * @returns {Promise<unknown>}
+ */
+function dispatch(argv) {
+  const cmd = argv[0]
+  if (cmd === 'pool' || cmd === 'serve' || shouldStartServer(argv)) {
+    const { startService, parseServiceArgs } = require('./pool')
+    const rest = (cmd === 'pool' || cmd === 'serve') ? argv.slice(1) : []
+    const opts = parseServiceArgs(rest)
+    if (cmd === 'pool') opts.pool = true
+    // serve/bare: honor an explicit --pool/--no-pool, else auto-enable when a
+    // sources file is present.
+    else if (opts.pool === null) opts.pool = fs.existsSync(opts.sources)
+    return startService(opts, module.exports._internals)
+  }
+  return main()
+}
+
+if (require.main === module) dispatch(process.argv.slice(2)).catch(err => {
   console.error(err)
   process.exit(1)
 })

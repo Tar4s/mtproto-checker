@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Working MTProto Proxies</title>
+<style>
+  :root {
+    --bg: #0e1621;
+    --bg-elev: #17212b;
+    --bg-head: #1c2a38;
+    --row-hover: #1e2c3a;
+    --border: #24313f;
+    --border-hi: #2f4256;
+    --text: #ffffff;
+    --muted: #7d8b99;
+    --muted2: #97a6b5;
+    --blue: #64b5ff;
+    --blue-dim: #4ea4f5;
+    --green: #4ac26b;
+    --amber: #e6a23c;
+    --pill: #2a3a49;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body {
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 28px 16px 80px; }
+
+  header.hero { text-align: center; padding: 20px 8px 6px; }
+  header.hero h1 { font-size: 32px; font-weight: 800; margin: 0 0 10px; letter-spacing: -0.5px; }
+  header.hero p { color: var(--muted2); font-size: 15px; line-height: 1.5; margin: 0 auto; max-width: 560px; }
+  header.hero .accent { color: var(--text); font-weight: 600; }
+
+  .search {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 18px; margin: 24px 0 24px;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .search:focus-within { border-color: var(--border-hi); box-shadow: 0 0 0 3px rgba(78,164,245,.10); }
+  .search svg { flex: none; opacity: .6; transition: opacity .2s ease; }
+  .search:focus-within svg { opacity: .9; }
+  .search input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 16px; }
+  .search input::placeholder { color: var(--muted); }
+
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar h2 { font-size: 24px; font-weight: 800; margin: 0; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; background: var(--bg-head);
+    border: 1px solid var(--border); color: var(--text); border-radius: 10px;
+    padding: 10px 15px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: background .14s ease, border-color .14s ease, transform .08s ease;
+  }
+  .btn:hover { background: var(--row-hover); border-color: var(--border-hi); }
+  .btn:active { transform: scale(.95); }
+  .btn:disabled { opacity: .45; cursor: default; transform: none; }
+  .btn svg { opacity: .9; }
+  .btn.icon { padding: 10px; }
+
+  /* auto-refresh toggle */
+  .toggle .switch { width: 34px; height: 20px; border-radius: 999px; background: var(--pill); position: relative; flex: none; transition: background .22s ease; }
+  .toggle .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #8aa0b3; transition: transform .24s cubic-bezier(.34,1.56,.64,1), background .22s ease; }
+  .btn.toggle.on .switch { background: rgba(78,164,245,.35); }
+  .btn.toggle.on .switch::after { transform: translateX(14px); background: var(--blue-dim); }
+  .refresh svg { transition: transform .3s ease; }
+  .refresh:hover svg { transform: rotate(-30deg); }
+  .refresh.spinning svg { animation: spin .7s linear infinite; }
+
+  .select { position: relative; background: var(--bg-head); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 14px; font-weight: 600; }
+  .select select { appearance: none; -webkit-appearance: none; background: none; border: none; outline: none; color: inherit; font: inherit; padding: 10px 34px 10px 15px; cursor: pointer; }
+  .select::after { content: ""; position: absolute; right: 14px; top: 50%; width: 8px; height: 8px; border-right: 2px solid var(--muted2); border-bottom: 2px solid var(--muted2); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+
+  .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; color: var(--muted2); font-size: 13px; }
+  .pill { background: var(--pill); color: var(--text); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 600; display: inline-block; }
+  .pill.bump { animation: bump .45s ease; }
+  @keyframes bump { 0%{transform:scale(1)} 30%{transform:scale(1.14)} 100%{transform:scale(1)} }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+  .dot.checking { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .dot.idle { background: var(--blue-dim); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .card {
+    display: block; background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 12px; padding: 13px 15px; color: inherit; cursor: pointer;
+    transition: background .14s ease, border-color .14s ease, transform .14s ease, box-shadow .14s ease;
+    animation: cardIn .34s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .card:hover { background: var(--row-hover); border-color: var(--border-hi); transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.30); }
+  .card:active { transform: translateY(0) scale(.98); box-shadow: none; }
+  .card .open { transition: color .14s ease, transform .14s ease; }
+  .card:hover .open { color: var(--blue); transform: translateX(2px); }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .card { animation: none; } * { scroll-behavior: auto; } }
+  .card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .card .name { font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .card .name .host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .card .name .port { color: var(--muted2); font-weight: 600; }
+  .badge { font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--muted2); background: var(--pill); border-radius: 5px; padding: 2px 6px; text-transform: uppercase; flex: none; }
+  .lat { display: flex; align-items: center; gap: 5px; font-size: 15px; font-weight: 700; white-space: nowrap; flex: none; }
+  .lat .unit { color: var(--muted2); font-weight: 600; font-size: 12.5px; }
+  .lat .bolt { color: var(--blue-dim); flex: none; }
+  .lat-fast { color: var(--green); } .lat-mid { color: var(--blue); } .lat-slow { color: var(--amber); }
+  .card .bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; }
+  .card .sub { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .card .sub.tls { color: var(--blue); }
+  .card .sub.plain { color: var(--muted); }
+  .card .open { font-size: 12.5px; color: var(--muted2); font-weight: 600; display: flex; align-items: center; gap: 3px; white-space: nowrap; flex: none; }
+
+  .state { grid-column: 1 / -1; text-align: center; padding: 54px 20px; color: var(--muted2); }
+  .spinner { width: 26px; height: 26px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; margin: 0 auto 14px; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  code { background: var(--bg-head); padding: 2px 6px; border-radius: 5px; font-size: 12px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+    background: var(--blue-dim); color: #06243f; font-weight: 700; font-size: 14px;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease; z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 480px) {
+    header.hero h1 { font-size: 26px; }
+    .toolbar { align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>Working MTProto Proxies</h1>
+      <p><span class="accent">Live-checked</span> Telegram proxies via a real TDLib handshake — only the ones that actually connect. Tap a card to open it in Telegram.</p>
+    </header>
+
+    <div class="search">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="q" type="text" placeholder="Filter by server or SNI…" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div class="toolbar">
+      <h2>Top Proxies</h2>
+      <div class="controls">
+        <button class="btn" id="copyAll" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a2 2 0 012-2h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span id="copyAllLabel">Copy all</span>
+        </button>
+        <button class="btn icon refresh" id="refresh" type="button" title="Refresh now" aria-label="Refresh now">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 11.5A8 8 0 106 17.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M20 4.5v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="btn toggle" id="auto" type="button" title="Toggle auto-refresh" aria-pressed="true">
+          <span class="switch"></span>
+          <span id="autoLabel">Auto</span>
+        </button>
+        <div class="select">
+          <select id="sort">
+            <option value="fast">Fastest first</option>
+            <option value="slow">Slowest first</option>
+            <option value="server">Server A→Z</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="meta" id="meta">
+      <span class="pill" id="count">— working</span>
+      <span class="dot" id="phaseDot"></span>
+      <span id="phaseText">connecting…</span>
+      <span id="updated"></span>
+    </div>
+
+    <div class="grid" id="list">
+      <div class="state"><div class="spinner"></div>Loading proxies…</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Copied</div>
+
+<script>
+(function () {
+  var ENDPOINT = '/proxies?working=1';
+  var REFRESH_MS = 10000;
+
+  var AUTO_KEY = 'mtproto.autoRefresh';
+
+  var state = { proxies: [], meta: null, error: null, loaded: false };
+  var els = {
+    list: document.getElementById('list'),
+    q: document.getElementById('q'),
+    sort: document.getElementById('sort'),
+    count: document.getElementById('count'),
+    phaseDot: document.getElementById('phaseDot'),
+    phaseText: document.getElementById('phaseText'),
+    updated: document.getElementById('updated'),
+    toast: document.getElementById('toast'),
+    copyAll: document.getElementById('copyAll'),
+    copyAllLabel: document.getElementById('copyAllLabel'),
+    refresh: document.getElementById('refresh'),
+    auto: document.getElementById('auto'),
+    autoLabel: document.getElementById('autoLabel')
+  };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); }
+  function latClass(ms) { return ms < 500 ? 'lat-fast' : ms < 1200 ? 'lat-mid' : 'lat-slow'; }
+
+  // Canonical tg:// link that opens Telegram and applies the proxy. Works from
+  // either a tg://proxy?... or https://t.me/proxy?... raw link (same params).
+  function tgLink(p) {
+    var raw = p.link || '';
+    var qi = raw.indexOf('?');
+    if (qi !== -1) return 'tg://proxy?' + raw.slice(qi + 1);
+    return 'tg://proxy?server=' + encodeURIComponent(p.server) + '&port=' + encodeURIComponent(p.port);
+  }
+
+  function ago(iso) {
+    if (!iso) return '';
+    var d = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (d < 60) return 'checked ' + Math.max(1, Math.round(d)) + 's ago';
+    if (d < 3600) return 'checked ' + Math.round(d / 60) + 'm ago';
+    return 'checked ' + Math.round(d / 3600) + 'h ago';
+  }
+
+  var BOLT = '<svg class="bolt" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13l0-8z"/></svg>';
+
+  function filtered() {
+    var q = els.q.value.trim().toLowerCase();
+    var arr = state.proxies.slice();
+    if (q) arr = arr.filter(function (p) {
+      return (p.server && p.server.toLowerCase().indexOf(q) !== -1) ||
+             (p.sni && p.sni.toLowerCase().indexOf(q) !== -1);
+    });
+    var s = els.sort.value;
+    arr.sort(function (a, b) {
+      if (s === 'server') return String(a.server).localeCompare(String(b.server));
+      var am = a.ms == null ? Infinity : a.ms, bm = b.ms == null ? Infinity : b.ms;
+      return s === 'slow' ? bm - am : am - bm;
+    });
+    return arr;
+  }
+
+  function card(p, i) {
+    var badge = p.sni ? '<span class="badge">TLS</span>' : '';
+    var ms = p.ms == null ? '—' : p.ms;
+    var sub = p.sni
+      ? '<div class="sub tls">SNI: ' + esc(p.sni) + '</div>'
+      : '<div class="sub plain">noSNI</div>';
+    var delay = Math.min(i * 26, 360);
+    return '' +
+      '<a class="card" style="animation-delay:' + delay + 'ms" href="' + esc(tgLink(p)) + '" rel="nofollow">' +
+        '<div class="top">' +
+          '<div class="name"><span class="host">' + esc(p.server) + '</span><span class="port">:' + esc(p.port) + '</span>' + badge + '</div>' +
+          '<div class="lat">' + BOLT + '<span class="' + latClass(p.ms || 0) + '">' + ms + '</span><span class="unit">ms</span></div>' +
+        '</div>' +
+        '<div class="bottom">' +
+          sub +
+          '<span class="open">Open in Telegram ›</span>' +
+        '</div>' +
+      '</a>';
+  }
+
+  var lastSig = null, lastCount = null;
+
+  function render() {
+    if (state.meta) {
+      var m = state.meta;
+      var wc = m.workingCount != null ? m.workingCount : state.proxies.length;
+      els.count.textContent = wc + ' working';
+      if (lastCount != null && wc !== lastCount) {
+        els.count.classList.remove('bump'); void els.count.offsetWidth; els.count.classList.add('bump');
+      }
+      lastCount = wc;
+      var phase = m.phase || 'idle';
+      els.phaseDot.className = 'dot ' + (phase === 'checking' ? 'checking' : phase === 'idle' ? 'idle' : '');
+      var extra = phase === 'checking' && m.iterations ? (' · round ' + m.iteration + '/' + m.iterations + ' · ' + m.containerCount + ' left') : '';
+      els.phaseText.textContent = 'cycle ' + m.cycle + ' · ' + phase + extra;
+      els.updated.textContent = m.updatedAt ? ('· ' + ago(m.updatedAt)) : '';
+    }
+
+    var arr = state.error ? [] : filtered();
+    var n = arr.length;
+    els.copyAll.disabled = n === 0;
+    els.copyAllLabel.textContent = n ? ('Copy all (' + n + ')') : 'Copy all';
+
+    // Only rebuild the card DOM when the visible set actually changes — keeps
+    // hover state and avoids re-triggering the entry animation on every poll.
+    var sig = state.error ? 'err:' + state.error
+      : els.sort.value + '|' + els.q.value.trim().toLowerCase() + '|' + arr.map(function (p) { return p.server + ':' + p.port + ':' + p.ms; }).join(',');
+    if (state.loaded && sig === lastSig) return;
+    lastSig = sig;
+
+    if (state.error) {
+      els.list.innerHTML = '<div class="state">⚠️ ' + esc(state.error) + '<br><br>Is the pool running? This page reads <code>' + ENDPOINT + '</code>.</div>';
+      return;
+    }
+    if (!state.loaded) return;
+    if (n === 0) {
+      els.list.innerHTML = '<div class="state">' + (state.proxies.length ? 'No matches for your filter.' : 'No working proxies yet — the first check is still running.') + '</div>';
+      return;
+    }
+    els.list.innerHTML = arr.map(card).join('');
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { els.toast.classList.remove('show'); }, 1600);
+  }
+
+  function copy(text, msg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast(msg); }, function () { fallbackCopy(text, msg); });
+    } else fallbackCopy(text, msg);
+  }
+  function fallbackCopy(text, msg) {
+    var t = document.createElement('textarea');
+    t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.focus(); t.select();
+    try { document.execCommand('copy'); toast(msg); } catch (e) { toast('Copy failed'); }
+    document.body.removeChild(t);
+  }
+
+  els.copyAll.addEventListener('click', function () {
+    var arr = filtered();
+    if (!arr.length) return;
+    var text = arr.map(tgLink).join('\n');
+    copy(text, arr.length + ' ' + (arr.length === 1 ? 'proxy' : 'proxies') + ' copied');
+  });
+  els.q.addEventListener('input', render);
+  els.sort.addEventListener('change', render);
+
+  // --- auto-refresh (persisted per browser) ---
+  var autoRefresh = localStorage.getItem(AUTO_KEY) !== '0'; // default on
+  var timer = null;
+  function applyAuto() {
+    els.auto.classList.toggle('on', autoRefresh);
+    els.autoLabel.textContent = autoRefresh ? 'Auto: on' : 'Auto: off';
+    els.auto.setAttribute('aria-pressed', autoRefresh ? 'true' : 'false');
+    if (timer) { clearInterval(timer); timer = null; }
+    if (autoRefresh) timer = setInterval(load, REFRESH_MS);
+  }
+  els.auto.addEventListener('click', function () {
+    autoRefresh = !autoRefresh;
+    try { localStorage.setItem(AUTO_KEY, autoRefresh ? '1' : '0'); } catch (e) {}
+    applyAuto();
+    toast(autoRefresh ? 'Auto-refresh on' : 'Auto-refresh off');
+    if (autoRefresh) load();
+  });
+  els.refresh.addEventListener('click', function () { load(); });
+
+  var inflight = false;
+  function load() {
+    if (inflight) return;
+    inflight = true;
+    els.refresh.classList.add('spinning');
+    fetch(ENDPOINT, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        state.proxies = data.proxies || [];
+        state.meta = data;
+        state.error = null;
+        state.loaded = true;
+        render();
+      })
+      .catch(function (err) {
+        state.error = err.message || String(err);
+        state.loaded = true;
+        render();
+      })
+      .then(function () { inflight = false; els.refresh.classList.remove('spinning'); });
+  }
+
+  applyAuto();  // starts the interval when autoRefresh is on
+  load();       // always fetch once on open
+  setInterval(function () { if (state.meta) render(); }, 1000); // keep "checked … ago" ticking
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,13 @@
 services:
   app:
     container_name: mtproto-checker
-    image: registry.gitlab.com/kalashnikof/mtproto-checker:latest
+    # Built locally on the server from the repo source. compose lives in
+    # <repo>/docker, so the build context is the parent (repo root) where the
+    # Dockerfile is.
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mtproto-checker:local
     restart: unless-stopped
     environment:
       - TG_API_ID=${TG_API_ID}

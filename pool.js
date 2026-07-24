@@ -11,8 +11,12 @@
  *   2. Runs a first check in the background and populates the *live container*
  *      with the proxies that passed (working only).
  *   3. Runs N further re-check rounds against the live container, keeping only
- *      the survivors each round (extra stability filtering).
- *   4. Sleeps for a configured interval, then repeats the whole cycle from the
+ *      the survivors each round (extra stability filtering). These rounds run at
+ *      full concurrency and their `ms` is inflated by TDLib queueing, so it is
+ *      discarded.
+ *   4. Runs one measurement pass over the survivors at low concurrency
+ *      (`--measure-concurrency`, default 1) to record accurate per-proxy latency.
+ *   5. Sleeps for a configured interval, then repeats the whole cycle from the
  *      sources again (the container is refreshed atomically — see below).
  *
  * All checking happens on a background loop. An HTTP server exposes the live
@@ -33,9 +37,12 @@
  *   --sources <file>     source list file (default "sources.txt")
  *   --iterations <n>     re-check rounds against the container (default 3)
  *   --interval <hours>   pause between full cycles (default 6)
+ *   --keepalive <min>    re-measure the container this often during the pause
+ *                        (default 15; prunes dead proxies, refreshes latency)
  *   --dc <1-5>           data center for testProxy (default 2)
  *   --timeout <sec>      per-proxy timeout (default 10)
- *   --concurrency <n>    parallel checks (default 30)
+ *   --concurrency <n>    parallel checks in filtering rounds (default 30)
+ *   --measure-concurrency <n>  parallel checks in the latency pass (default 1)
  *   --port <n>           HTTP port (default PORT env or 8080)
  *   --clear-on-cycle     empty the container at the start of each cycle
  *
@@ -94,6 +101,8 @@ function parseServiceArgs(argv) {
     dc: 2,
     timeout: 10,
     concurrency: 30,
+    measureConcurrency: 1,
+    keepalive: 15,
     port: parseInt(process.env.PORT || '8080', 10),
     clearOnCycle: false,
     pool: null,
@@ -108,6 +117,8 @@ function parseServiceArgs(argv) {
     else if (a === '--dc') opts.dc = parseInt(argv[++i], 10)
     else if (a === '--timeout') opts.timeout = parseFloat(argv[++i])
     else if (a === '--concurrency') opts.concurrency = parseInt(argv[++i], 10)
+    else if (a === '--measure-concurrency') opts.measureConcurrency = parseInt(argv[++i], 10)
+    else if (a === '--keepalive') opts.keepalive = parseFloat(argv[++i])
     else if (a === '--port') opts.port = parseInt(argv[++i], 10)
     else if (a === '--clear-on-cycle') opts.clearOnCycle = true
     else if (a === '--pool') opts.pool = true
@@ -224,6 +235,35 @@ function toPublic(entry) {
 }
 
 /**
+ * Build an onProgress handler shared by filtering rounds, the measurement pass
+ * and keepalive: updates the entry, prunes failures live, publishes a fresh
+ * snapshot, logs one line per check with the given short `label`.
+ * @param {object} state - pool state (its `container`/`updatedAt` are mutated)
+ * @param {Map<string, object>} entries - key → container entry, pruned in place
+ * @param {Array} survivors - collects proxies that passed
+ * @param {string} label - short log tag (e.g. "r1", "m ", "k ")
+ * @param {number} total - item count, for padding
+ * @returns {(proxy: object, res: object, index: number, tot: number) => void}
+ */
+function makeProgress(state, entries, survivors, label, total) {
+  const width = String(total).length
+  return (proxy, res, index, tot) => {
+    const entry = entries.get(proxyKey(proxy))
+    if (res.ok) {
+      if (entry) { entry.ok = true; entry.ms = res.ms; entry.error = null }
+      survivors.push(proxy)
+    } else if (entry) {
+      entries.delete(proxyKey(proxy))
+    }
+    state.container = [...entries.values()]
+    state.updatedAt = new Date().toISOString()
+    const tag = res.ok ? `✓ ${String(res.ms).padStart(5)}ms` : `✗ ${res.error}`
+    const sni = proxy.sni ? ` [${proxy.sni}]` : ''
+    log(`  ${label} [${String(index + 1).padStart(width)}/${tot}] ${tag}  ${proxy.server}:${proxy.port}${sni}`)
+  }
+}
+
+/**
  * Run one full cycle: load every proxy from the sources into the container
  * up-front (so the API can serve them immediately), then run N re-check rounds
  * that prune the container live — dead proxies are dropped the moment a check
@@ -258,30 +298,54 @@ async function runCycle(state, opts, deps) {
   state.iterations = rounds
   let current = proxies
 
+  // Filtering rounds: fast (high concurrency), keep survivors. The `ms` from
+  // these rounds is inflated by TDLib-internal queueing under concurrency and
+  // is NOT used as the reported latency — it's overwritten by the pass below.
   for (let iteration = 1; iteration <= rounds && current.length > 0; iteration++) {
     state.iteration = iteration
     log(`cycle ${state.cycle} round ${iteration}/${rounds}: checking ${current.length} proxies...`)
-    const width = String(current.length).length
     const survivors = []
-    const onProgress = (proxy, res, index, total) => {
-      const entry = entries.get(proxyKey(proxy))
-      if (res.ok) {
-        if (entry) { entry.ok = true; entry.ms = res.ms; entry.error = null }
-        survivors.push(proxy)
-      } else if (entry) {
-        entries.delete(proxyKey(proxy))
-      }
-      // Publish a fresh snapshot after every check so readers see live pruning.
-      state.container = [...entries.values()]
-      state.updatedAt = new Date().toISOString()
-      const tag = res.ok ? `✓ ${String(res.ms).padStart(5)}ms` : `✗ ${res.error}`
-      const sni = proxy.sni ? ` [${proxy.sni}]` : ''
-      log(`  r${iteration} [${String(index + 1).padStart(width)}/${total}] ${tag}  ${proxy.server}:${proxy.port}${sni}`)
-    }
-    await checkProxies(current, { ...checkOpts, onProgress })
+    await checkProxies(current, { ...checkOpts, onProgress: makeProgress(state, entries, survivors, `r${iteration}`, current.length) })
     current = survivors
     log(`cycle ${state.cycle} round ${iteration}/${rounds}: ${survivors.length} working`)
   }
+
+  // Measurement pass: re-check the survivors serially (low concurrency) so the
+  // reported `ms` is a clean per-proxy handshake time with no queue-wait — the
+  // fix for latency drifting upward under concurrent filtering. Survivors are
+  // few by now, so this stays cheap. Also drops any that died since.
+  if (current.length > 0) {
+    const measureConcurrency = Math.max(1, opts.measureConcurrency ?? 1)
+    state.phase = 'measuring'
+    log(`cycle ${state.cycle} measure: latency of ${current.length} survivors (concurrency ${measureConcurrency})...`)
+    const survivors = []
+    await checkProxies(current, { ...checkOpts, concurrency: measureConcurrency, onProgress: makeProgress(state, entries, survivors, 'm ', current.length) })
+    current = survivors
+    log(`cycle ${state.cycle} measure: ${survivors.length} working (accurate latency)`)
+  }
+}
+
+/**
+ * Between full cycles, re-measure the current container's proxies at low
+ * concurrency: prune any that died (server gone / access blocked) and refresh
+ * latency. Mutates `state.container` live; surfaced only in the console, not via
+ * any status field. Cheap — the container holds only survivors by now.
+ * @param {object} state - pool state
+ * @param {object} opts - parsed service options
+ * @param {{checkProxies: Function, checkOpts: object}} deps
+ */
+async function keepalivePass(state, opts, deps) {
+  const { checkProxies, checkOpts } = deps
+  const entries = new Map()
+  for (const entry of state.container) entries.set(proxyKey(entry.proxy), entry)
+  const current = [...entries.values()].map(e => e.proxy)
+  if (current.length === 0) return
+
+  const measureConcurrency = Math.max(1, opts.measureConcurrency ?? 1)
+  log(`keepalive: re-measuring ${current.length} proxies (concurrency ${measureConcurrency})...`)
+  const survivors = []
+  await checkProxies(current, { ...checkOpts, concurrency: measureConcurrency, onProgress: makeProgress(state, entries, survivors, 'k ', current.length) })
+  log(`keepalive: ${survivors.length}/${current.length} still working`)
 }
 
 /**
@@ -413,6 +477,8 @@ async function startService(opts, internals) {
   if (poolEnabled) {
     if (!fs.existsSync(opts.sources)) throw new Error(`Sources file not found: ${opts.sources}`)
     if (!Number.isInteger(opts.iterations) || opts.iterations < 1) throw new Error('--iterations must be a positive integer.')
+    if (!Number.isInteger(opts.measureConcurrency) || opts.measureConcurrency < 1) throw new Error('--measure-concurrency must be a positive integer.')
+    if (!(opts.keepalive > 0)) throw new Error('--keepalive must be a positive number of minutes.')
     if (!(opts.interval > 0)) throw new Error('--interval must be a positive number of hours.')
   }
 
@@ -443,7 +509,7 @@ async function startService(opts, internals) {
   log('  GET  /health')
   if (poolEnabled) {
     log('  GET  /proxies · /proxies?working=1 · /proxies.txt · /status')
-    log(`pool: sources=${opts.sources} iterations=${opts.iterations} interval=${opts.interval}h dc=${opts.dc} timeout=${opts.timeout}s concurrency=${opts.concurrency}`)
+    log(`pool: sources=${opts.sources} iterations=${opts.iterations} interval=${opts.interval}h keepalive=${opts.keepalive}m dc=${opts.dc} timeout=${opts.timeout}s concurrency=${opts.concurrency} measure-concurrency=${opts.measureConcurrency}`)
   } else {
     log('  pool: disabled (on-demand /check only)')
   }
@@ -470,9 +536,21 @@ async function startService(opts, internals) {
         state.phase = 'idle'
         state.iteration = 0
         const waitMs = opts.interval * 3600 * 1000
-        state.nextRunAt = new Date(Date.now() + waitMs).toISOString()
-        log(`cycle ${state.cycle} done, sleeping ${opts.interval}h (next ~${state.nextRunAt})`)
-        await new Promise(r => setTimeout(r, waitMs).unref())
+        const keepaliveMs = Math.max(60000, opts.keepalive * 60 * 1000)
+        const endAt = Date.now() + waitMs
+        state.nextRunAt = new Date(endAt).toISOString()
+        log(`cycle ${state.cycle} done, sleeping ${opts.interval}h (next ~${state.nextRunAt}); keepalive every ${opts.keepalive}m`)
+        // Sleep in keepalive-sized chunks; re-measure the container between them
+        // so dead proxies drop out and latency stays fresh during the long wait.
+        while (running && Date.now() < endAt) {
+          await new Promise(r => setTimeout(r, Math.min(keepaliveMs, endAt - Date.now())).unref())
+          if (!running || Date.now() >= endAt) break
+          try {
+            await keepalivePass(state, opts, deps)
+          } catch (err) {
+            log(`keepalive failed: ${err.stack || err.message || err}`)
+          }
+        }
       }
     }
     loop()
@@ -482,4 +560,4 @@ async function startService(opts, internals) {
 }
 
 module.exports = { startService, parseServiceArgs }
-module.exports._internals = { parseSourcesFile, loadProxiesFromSources, createPoolState, runCycle, createServiceServer, handleCheck, toPublic, proxyKey, timestamp, log }
+module.exports._internals = { parseSourcesFile, loadProxiesFromSources, createPoolState, runCycle, keepalivePass, makeProgress, createServiceServer, handleCheck, toPublic, proxyKey, timestamp, log }

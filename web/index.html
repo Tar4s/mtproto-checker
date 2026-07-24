@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Working MTProto Proxies</title>
+<title>vonnie line dev.</title>
+<link rel="icon" type="image/png" href="https://img.icons8.com/softteal-color/96/security-checked.png">
+<link rel="apple-touch-icon" href="https://img.icons8.com/softteal-color/96/security-checked.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0e1621;
@@ -19,7 +24,9 @@
     --blue-dim: #4ea4f5;
     --green: #4ac26b;
     --amber: #e6a23c;
+    --red: #e35b6a;
     --pill: #2a3a49;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
     /* ▼▼▼  PROMO IMAGE — put your image URL between the quotes  ▼▼▼ */
     --promo-img: url('https://i.imgur.com/UANCmGX.jpeg');
@@ -29,7 +36,7 @@
   html, body { margin: 0; padding: 0; background: var(--bg); }
   body {
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--blue); text-decoration: none; }
@@ -118,6 +125,14 @@
   .search:focus-within svg { opacity: .9; }
   .search input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 16px; }
   .search input::placeholder { color: var(--muted); }
+  .search .clear {
+    flex: none; width: 24px; height: 24px; border: none; border-radius: 50%; cursor: pointer;
+    background: var(--pill); color: var(--muted2); font-size: 15px; line-height: 1; display: grid; place-items: center;
+    opacity: 0; transform: scale(.6); pointer-events: none;
+    transition: opacity .18s ease, transform .18s cubic-bezier(.34,1.56,.64,1), background .15s ease, color .15s ease;
+  }
+  .search .clear.show { opacity: 1; transform: scale(1); pointer-events: auto; }
+  .search .clear:hover { background: var(--border-hi); color: var(--text); }
 
   .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   .toolbar h2 { font-size: 24px; font-weight: 800; margin: 0; }
@@ -171,16 +186,17 @@
   @keyframes cardIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .card { animation: none; } * { scroll-behavior: auto; } }
   .card .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .card .name { font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .card .name { font-family: var(--mono); font-size: 14.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
   .card .name .host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .card .name .port { color: var(--muted2); font-weight: 600; }
-  .badge { font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--muted2); background: var(--pill); border-radius: 5px; padding: 2px 6px; text-transform: uppercase; flex: none; }
-  .lat { display: flex; align-items: center; gap: 5px; font-size: 15px; font-weight: 700; white-space: nowrap; flex: none; }
+  .badge { font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--muted2); background: var(--pill); border-radius: 5px; padding: 2px 6px; text-transform: uppercase; flex: none; }
+  .lat { font-family: var(--mono); display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 700; white-space: nowrap; flex: none; }
   .lat .unit { color: var(--muted2); font-weight: 600; font-size: 12.5px; }
-  .lat .bolt { color: var(--blue-dim); flex: none; }
-  .lat-fast { color: var(--green); } .lat-mid { color: var(--blue); } .lat-slow { color: var(--amber); }
+  .lat .bolt { color: var(--blue-dim); flex: none; transition: transform .25s cubic-bezier(.34,1.56,.64,1); }
+  .card:hover .lat .bolt { transform: scale(1.3) rotate(-8deg); }
+  .lat-fast { color: var(--green); } .lat-mid { color: var(--amber); } .lat-slow { color: var(--red); }
   .card .bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; }
-  .card .sub { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .card .sub { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .card .sub.tls { color: var(--blue); }
   .card .sub.plain { color: var(--muted); }
   .card .open { font-size: 12.5px; color: var(--muted2); font-weight: 600; display: flex; align-items: center; gap: 3px; white-space: nowrap; flex: none; }
@@ -188,6 +204,25 @@
   .state { grid-column: 1 / -1; text-align: center; padding: 54px 20px; color: var(--muted2); }
   .spinner { width: 26px; height: 26px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; margin: 0 auto 14px; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* skeleton loading cards (shimmer) */
+  .skel { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 15px; }
+  .skel .line { height: 12px; border-radius: 6px; background: var(--bg-head); position: relative; overflow: hidden; }
+  .skel .line + .line { margin-top: 10px; }
+  .skel .line.short { width: 45%; }
+  .skel .line.mid { width: 70%; }
+  .skel .line::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
+    transform: translateX(-100%); animation: shimmer 1.3s ease-in-out infinite;
+  }
+  @keyframes shimmer { 100% { transform: translateX(100%); } }
+
+  /* copy-all success morph */
+  .btn.copied { background: rgba(74,194,107,.14); border-color: rgba(74,194,107,.5); color: var(--green); }
+  .btn.copied svg { animation: pop .3s ease; }
+  @keyframes pop { 0% { transform: scale(.6); } 60% { transform: scale(1.2); } 100% { transform: scale(1); } }
+  .refresh.done svg { animation: pop .35s ease; }
   code { background: var(--bg-head); padding: 2px 6px; border-radius: 5px; font-size: 12px; }
 
   .toast {
@@ -197,6 +232,13 @@
     transition: opacity .2s ease, transform .2s ease; z-index: 10;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast .tick { display: inline-block; margin-right: 6px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skel .line::after, .refresh.spinning svg { animation: none; }
+    .card:hover .lat .bolt { transform: none; }
+    .search .clear { transition: opacity .1s ease; }
+  }
 
   @media (max-width: 480px) {
     header.hero h1 { font-size: 26px; }
@@ -207,7 +249,7 @@
 <body>
   <div class="wrap">
     <header class="hero">
-      <h1>Working MTProto Proxies</h1>
+      <h1>vonnie line dev.</h1>
       <p><span class="accent">Live-checked</span> Telegram proxies via a real TDLib handshake — only the ones that actually connect. Tap a card to open it in Telegram.</p>
     </header>
 
@@ -231,6 +273,7 @@
     <div class="search">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <input id="q" type="text" placeholder="Filter by server or SNI…" autocomplete="off" spellcheck="false">
+      <button class="clear" id="clear" type="button" title="Clear" aria-label="Clear filter">✕</button>
     </div>
 
     <div class="toolbar">
@@ -292,11 +335,34 @@
     copyAllLabel: document.getElementById('copyAllLabel'),
     refresh: document.getElementById('refresh'),
     auto: document.getElementById('auto'),
-    autoLabel: document.getElementById('autoLabel')
+    autoLabel: document.getElementById('autoLabel'),
+    clear: document.getElementById('clear')
   };
 
+  // Shimmering skeleton placeholders shown until the first data arrives.
+  var SKELETON = new Array(8).join('0').split('').map(function () {
+    return '<div class="skel"><div class="line mid"></div><div class="line short"></div></div>';
+  }).join('');
+
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); }
-  function latClass(ms) { return ms < 500 ? 'lat-fast' : ms < 1200 ? 'lat-mid' : 'lat-slow'; }
+  // Adaptive latency grading — thresholds derive from the actual working set's
+  // numbers (terciles), not fixed cutoffs: best third green, middle amber,
+  // slowest third red. Recomputed on every render from the current final list.
+  var latThresholds = null;
+  function computeLatThresholds(proxies) {
+    var ms = proxies.filter(function (p) { return p.ok && p.ms != null; })
+                    .map(function (p) { return p.ms; }).sort(function (a, b) { return a - b; });
+    if (!ms.length) return null;
+    var q = function (f) { return ms[Math.min(ms.length - 1, Math.floor(f * ms.length))]; };
+    return { good: q(1 / 3), mid: q(2 / 3) };
+  }
+  function latClass(ms) {
+    var t = latThresholds;
+    if (!t || ms == null) return 'lat-mid';
+    if (ms <= t.good) return 'lat-fast';
+    if (ms <= t.mid) return 'lat-mid';
+    return 'lat-slow';
+  }
 
   // Canonical tg:// link that opens Telegram and applies the proxy. Works from
   // either a tg://proxy?... or https://t.me/proxy?... raw link (same params).
@@ -344,7 +410,7 @@
       '<a class="card" style="animation-delay:' + delay + 'ms" href="' + esc(tgLink(p)) + '" rel="nofollow">' +
         '<div class="top">' +
           '<div class="name"><span class="host">' + esc(p.server) + '</span><span class="port">:' + esc(p.port) + '</span>' + badge + '</div>' +
-          '<div class="lat">' + BOLT + '<span class="' + latClass(p.ms || 0) + '">' + ms + '</span><span class="unit">ms</span></div>' +
+          '<div class="lat">' + BOLT + '<span class="' + latClass(p.ms) + '">' + ms + '</span><span class="unit">ms</span></div>' +
         '</div>' +
         '<div class="bottom">' +
           sub +
@@ -353,17 +419,38 @@
       '</a>';
   }
 
+  var prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Animated count-up for the working counter (easeOutCubic).
+  var countRAF = null;
+  function animateCount(from, to) {
+    if (countRAF) cancelAnimationFrame(countRAF);
+    // Set the final value up-front so the counter is always correct even if rAF
+    // is throttled (e.g. the tab is hidden); the animation then overrides it.
+    els.count.textContent = to + ' working';
+    if (prefersReduced || from === to) return;
+    var dur = 500, start = performance.now();
+    var step = function (now) {
+      var t = Math.min(1, (now - start) / dur);
+      var e = 1 - Math.pow(1 - t, 3);
+      els.count.textContent = (t < 1 ? Math.round(from + (to - from) * e) : to) + ' working';
+      if (t < 1) countRAF = requestAnimationFrame(step);
+    };
+    countRAF = requestAnimationFrame(step);
+  }
+
+  var copiedState = false;
   var lastSig = null, lastCount = null;
 
   function render() {
     if (state.meta) {
       var m = state.meta;
       var wc = m.workingCount != null ? m.workingCount : state.proxies.length;
-      els.count.textContent = wc + ' working';
-      if (lastCount != null && wc !== lastCount) {
+      if (wc !== lastCount) {
+        animateCount(lastCount == null ? 0 : lastCount, wc);
         els.count.classList.remove('bump'); void els.count.offsetWidth; els.count.classList.add('bump');
+        lastCount = wc;
       }
-      lastCount = wc;
       var phase = m.phase || 'idle';
       els.phaseDot.className = 'dot ' + (phase === 'checking' ? 'checking' : phase === 'idle' ? 'idle' : '');
       var extra = phase === 'checking' && m.iterations ? (' · round ' + m.iteration + '/' + m.iterations + ' · ' + m.containerCount + ' left') : '';
@@ -373,8 +460,8 @@
 
     var arr = state.error ? [] : filtered();
     var n = arr.length;
-    els.copyAll.disabled = n === 0;
-    els.copyAllLabel.textContent = n ? ('Copy all (' + n + ')') : 'Copy all';
+    els.copyAll.disabled = n === 0 && !copiedState;
+    if (!copiedState) els.copyAllLabel.textContent = n ? ('Copy all (' + n + ')') : 'Copy all';
 
     // Only rebuild the card DOM when the visible set actually changes — keeps
     // hover state and avoids re-triggering the entry animation on every poll.
@@ -392,6 +479,8 @@
       els.list.innerHTML = '<div class="state">' + (state.proxies.length ? 'No matches for your filter.' : 'No working proxies yet — the first check is still running.') + '</div>';
       return;
     }
+    // Grade colours off the full working set so they stay stable under filtering.
+    latThresholds = computeLatThresholds(state.proxies);
     els.list.innerHTML = arr.map(card).join('');
   }
 
@@ -403,26 +492,45 @@
     toastTimer = setTimeout(function () { els.toast.classList.remove('show'); }, 1600);
   }
 
-  function copy(text, msg) {
+  function copy(text, msg, onOk) {
+    var ok = function () { toast(msg); if (onOk) onOk(); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { toast(msg); }, function () { fallbackCopy(text, msg); });
-    } else fallbackCopy(text, msg);
+      navigator.clipboard.writeText(text).then(ok, function () { fallbackCopy(text, msg, onOk); });
+    } else fallbackCopy(text, msg, onOk);
   }
-  function fallbackCopy(text, msg) {
+  function fallbackCopy(text, msg, onOk) {
     var t = document.createElement('textarea');
     t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
     document.body.appendChild(t); t.focus(); t.select();
-    try { document.execCommand('copy'); toast(msg); } catch (e) { toast('Copy failed'); }
+    try { document.execCommand('copy'); toast(msg); if (onOk) onOk(); } catch (e) { toast('Copy failed'); }
     document.body.removeChild(t);
+  }
+
+  // Copy-all button success morph: green state + label, reverts after 1.5s.
+  var copyRevert;
+  function copySuccess(count) {
+    copiedState = true;
+    els.copyAll.classList.add('copied');
+    els.copyAllLabel.textContent = 'Copied ' + count + ' ✓';
+    clearTimeout(copyRevert);
+    copyRevert = setTimeout(function () {
+      copiedState = false;
+      els.copyAll.classList.remove('copied');
+      render();
+    }, 1500);
   }
 
   els.copyAll.addEventListener('click', function () {
     var arr = filtered();
     if (!arr.length) return;
     var text = arr.map(tgLink).join('\n');
-    copy(text, arr.length + ' ' + (arr.length === 1 ? 'proxy' : 'proxies') + ' copied');
+    copy(text, arr.length + ' ' + (arr.length === 1 ? 'proxy' : 'proxies') + ' copied', function () { copySuccess(arr.length); });
   });
-  els.q.addEventListener('input', render);
+
+  // Search + clear button.
+  function syncClear() { els.clear.classList.toggle('show', els.q.value.length > 0); }
+  els.q.addEventListener('input', function () { syncClear(); render(); });
+  els.clear.addEventListener('click', function () { els.q.value = ''; syncClear(); els.q.focus(); render(); });
   els.sort.addEventListener('change', render);
 
   // --- auto-refresh (persisted per browser) ---
@@ -463,9 +571,14 @@
         state.loaded = true;
         render();
       })
-      .then(function () { inflight = false; els.refresh.classList.remove('spinning'); });
+      .then(function () {
+        inflight = false;
+        els.refresh.classList.remove('spinning');
+        els.refresh.classList.remove('done'); void els.refresh.offsetWidth; els.refresh.classList.add('done');
+      });
   }
 
+  els.list.innerHTML = SKELETON;  // show shimmer immediately, before first fetch
   applyAuto();  // starts the interval when autoRefresh is on
   load();       // always fetch once on open
   setInterval(function () { if (state.meta) render(); }, 1000); // keep "checked … ago" ticking
